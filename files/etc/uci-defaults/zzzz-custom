@@ -2,10 +2,10 @@
 is_first_boot=`uci -q get zz_config.@status[0].first_boot`
 if test $is_first_boot -gt 0; then
 #echo -e "m28cm28c\nm28cm28c" | (passwd root)
-uci set system.@system[0].hostname='zzM28C'
+uci set system.@system[0].hostname='wuming'
 uci commit system
 uci del dhcp.lan.ra_slaac
-uci set network.lan.ipaddr='10.0.0.1'
+uci set network.lan.ipaddr='192.168.1.1'
 uci add_list network.lan.ip6class='3_1_2v6'
 uci add_list network.lan.ip6class='4_1_2v6'
 uci set luci.main.lang='zh_cn'
@@ -16,9 +16,9 @@ uci set cpufreq.cpufreq.maxfreq0='1608000'
 uci commit
 /etc/init.d/network reload
 uci set wireless.radio0.cell_density='0'
-uci set wireless.default_radio0.ssid='zzM28C'
+uci set wireless.default_radio0.ssid='BRONYA'
 uci set wireless.default_radio0.encryption='psk2+ccmp'
-uci set wireless.default_radio0.key='m28cm28c'
+uci set wireless.default_radio0.key='3587536018'
 uci commit wireless
 /etc/init.d/network reload
 wifi
@@ -26,8 +26,8 @@ uci -q set zz_config.@status[0].first_boot=0
 uci commit zz_config
 fi
 
-sed -i "s?set wireless\.default_radio\${devidx}\.ssid=LEDE?set wireless\.default_radio\${devidx}\.ssid=\'zzM28C\'?g" /lib/wifi/mac80211.sh
-sed -i "s?set wireless\.default_radio\${devidx}\.encryption=none?set wireless\.default_radio\${devidx}\.encryption=\'psk2+ccmp\'\n\t\t\tset wireless\.default_radio\${devidx}\.key=\'m28cm28c\'?g" /lib/wifi/mac80211.sh
+sed -i "s?set wireless\.default_radio\${devidx}\.ssid=LEDE?set wireless\.default_radio\${devidx}\.ssid=\'BRONYA\'?g" /lib/wifi/mac80211.sh
+sed -i "s?set wireless\.default_radio\${devidx}\.encryption=none?set wireless\.default_radio\${devidx}\.encryption=\'psk2+ccmp\'\n\t\t\tset wireless\.default_radio\${devidx}\.key=\'3587536018\'?g" /lib/wifi/mac80211.sh
 
 uci set alpha.@navbar[2].name='nlbw'
 uci set alpha.@navbar[2].enable='Enable'
