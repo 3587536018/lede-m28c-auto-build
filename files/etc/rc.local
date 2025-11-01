@@ -1,7 +1,7 @@
 # Put your custom commands here that should be executed once
 # the system init finished. By default this file does nothing.
 
-echo 0 > /sys/devices/system/cpu/cpu2/online
-echo 0 > /sys/devices/system/cpu/cpu3/online
+# echo 0 > /sys/devices/system/cpu/cpu2/online
+# echo 0 > /sys/devices/system/cpu/cpu3/online
 
 exit 0
