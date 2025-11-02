@@ -6,6 +6,7 @@ uci set system.@system[0].hostname='wuming'
 uci commit system
 uci del dhcp.lan.ra_slaac
 uci set network.lan.ipaddr='192.168.1.1'
+uci add_list network.lan.ip6class='2_1_2v6'
 uci add_list network.lan.ip6class='3_1_2v6'
 uci add_list network.lan.ip6class='4_1_2v6'
 uci set luci.main.lang='zh_cn'
