@@ -43,4 +43,5 @@ if [ $retry -eq 0 ]; then
 fi
 
 echo "Start compiling with verbose logs"
-make V=s -j1 || { echo "make failed"; exit 1; }  # 详细日志+单线程，便于排查错误
+make V=0 -j$(nproc) || { echo "make failed"; exit 1; }
+# make V=s -j1 || { echo "make failed"; exit 1; }  # 详细日志+单线程，便于排查错误
