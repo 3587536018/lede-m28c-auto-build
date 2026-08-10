@@ -80,7 +80,7 @@ uci set qmodem.4_1_2.ports='/dev/ttyUSB0' '/dev/ttyUSB1' '/dev/ttyUSB2' '/dev/tt
 uci commit qmodem
 # ===== TurboACC: flow offloading + fullcone NAT =====
 uci set turboacc.global.set='1'
-uci set turboacc.config.tcpcca='cubic'
+uci set turboacc.config.tcpcca='bbr'
 uci set turboacc.config.fastpath='flow_offloading'
 uci set turboacc.config.fastpath_fo_hw='0'
 uci set turboacc.config.fullcone='1'

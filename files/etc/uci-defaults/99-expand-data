@@ -68,4 +68,19 @@ if [ -b "${disk}p3" ]; then
   fi
 fi
 
+# 5. swap 512MB (data partition)
+if [ -d /opt/docker ] && [ ! -f /opt/docker/swapfile ]; then
+  fallocate -l 512M /opt/docker/swapfile 2>/dev/null || dd if=/dev/zero of=/opt/docker/swapfile bs=1M count=512 2>/dev/null
+  chmod 600 /opt/docker/swapfile
+  mkswap /opt/docker/swapfile 2>/dev/null
+fi
+if [ -f /opt/docker/swapfile ]; then
+  uci -q delete fstab.swap
+  uci -q set fstab.swap=swap
+  uci -q set fstab.swap.device=/opt/docker/swapfile
+  uci -q set fstab.swap.enabled=1
+  uci -q commit fstab
+  swapon /opt/docker/swapfile 2>/dev/null || true
+fi
+
 exit 0
