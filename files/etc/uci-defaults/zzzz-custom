@@ -93,6 +93,8 @@ net.bridge.bridge-nf-call-arptables = 0
 net.bridge.bridge-nf-call-ip6tables = 0
 net.bridge.bridge-nf-call-iptables = 0
 EOF
+# ===== SFTP: enable full OpenSSH (sshd) =====
+/etc/init.d/sshd enable 2>/dev/null || true
 # ===== opkg feeds: Tencent LEDE mirror (latest stable 24.10.5) =====
 cat > /etc/opkg/distfeeds.conf <<'EOF'
 src/gz openwrt_core https://mirrors.tencent.com/lede/releases/24.10.5/targets/rockchip/armv8/packages
