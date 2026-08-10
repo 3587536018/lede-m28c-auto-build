@@ -1,0 +1,71 @@
+#!/bin/sh
+# 99-expand-data: 首次启动自动扩展数据分区
+# - 检测启动磁盘（rootfs 所在 mmcblkX）
+# - 若不存在 p3，用 parted 将剩余全部空间创建为 p3 (ext4)
+# - 挂载到 /opt/docker，并配置 docker 数据目录
+# 幂等：p3 已存在则跳过创建，直接确保挂载
+
+set -u
+
+# 1. 找到启动磁盘
+root_dev=""
+if [ -L /dev/root ]; then
+  root_dev=$(readlink -f /dev/root 2>/dev/null || echo "")
+fi
+case "$root_dev" in
+  /dev/mmcblk*)
+    disk=$(echo "$root_dev" | sed 's/p[0-9]*$//')
+    ;;
+  *)
+    # fallback: 从挂载表找 rootfs 所在磁盘
+    root_mnt=$(mount | awk '$2=="/rom" || $2=="/" {print $1; exit}')
+    case "$root_mnt" in
+      /dev/mmcblk*)
+        disk=$(echo "$root_mnt" | sed 's/p[0-9]*$//')
+        ;;
+      *)
+        disk=""
+        ;;
+    esac
+    ;;
+esac
+
+[ -n "${disk:-}" ] || exit 0
+[ -b "$disk" ] || exit 0
+
+# 2. 若 p3 不存在则创建（占满剩余空间）
+if [ ! -b "${disk}p3" ]; then
+  parted -s "$disk" mkpart primary ext4 4.2GiB 100% 2>/dev/null || exit 0
+  sleep 2
+  blockdev --rereadpt "$disk" 2>/dev/null || partprobe "$disk" 2>/dev/null || true
+  sleep 2
+fi
+
+# 3. 确保 p3 可用并挂载
+if [ -b "${disk}p3" ]; then
+  if ! blkid "${disk}p3" | grep -q 'TYPE="ext4"'; then
+    mkfs.ext4 -F -L docker "${disk}p3" 2>/dev/null || exit 0
+  fi
+
+  mkdir -p /opt/docker
+
+  uuid=$(blkid -s UUID -o value "${disk}p3" 2>/dev/null || true)
+  if [ -n "$uuid" ]; then
+    uci -q delete fstab.docker
+    uci -q set fstab.docker=mount
+    uci -q set fstab.docker.uuid="$uuid"
+    uci -q set fstab.docker.target=/opt/docker
+    uci -q set fstab.docker.enabled=1
+    uci -q commit fstab
+  fi
+
+  mount /opt/docker 2>/dev/null || mount -t ext4 "${disk}p3" /opt/docker 2>/dev/null || true
+
+  # 4. 配置 docker 数据目录
+  if uci -q get dockerd.globals >/dev/null 2>&1; then
+    uci -q set dockerd.globals.data_root='/opt/docker'
+    uci -q commit dockerd
+  fi
+fi
+
+exit 0
