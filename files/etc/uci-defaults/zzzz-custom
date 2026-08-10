@@ -17,12 +17,80 @@ uci set cpufreq.cpufreq.maxfreq0='1608000'
 uci commit
 /etc/init.d/network reload
 uci set wireless.radio0.cell_density='0'
+uci set wireless.radio0.country='CN'
+uci set wireless.radio0.channel='149'
 uci set wireless.default_radio0.ssid='BRONYA'
 uci set wireless.default_radio0.encryption='psk2+ccmp'
 uci set wireless.default_radio0.key='3587536018'
 uci commit wireless
 /etc/init.d/network reload
 wifi
+# ===== 5G modem (QModem: RM500Q-CN dual SIM slots) =====
+uci set qmodem.main=main
+uci set qmodem.main.enable_dial='1'
+uci set qmodem.main.start_delay='0'
+uci set qmodem.main.enable_pcie_scan='1'
+uci set qmodem.main.modem_count='2'
+# slot 3_1_2 - primary (enabled)
+uci set qmodem.3_1_2=modem-device
+uci set qmodem.3_1_2.path='/sys/bus/usb/devices/3-1.2/'
+uci set qmodem.3_1_2.data_interface='usb'
+uci set qmodem.3_1_2.enable_dial='1'
+uci set qmodem.3_1_2.soft_reboot='1'
+uci set qmodem.3_1_2.extend_prefix='1'
+uci set qmodem.3_1_2.pdp_type='ipv4v6'
+uci set qmodem.3_1_2.state='enabled'
+uci set qmodem.3_1_2.metric='12'
+uci set qmodem.3_1_2.name='rm500q-cn'
+uci set qmodem.3_1_2.network='wwan0'
+uci set qmodem.3_1_2.manufacturer='quectel'
+uci set qmodem.3_1_2.platform='qualcomm'
+uci set qmodem.3_1_2.wcdma_band='1/8'
+uci set qmodem.3_1_2.lte_band='1/3/5/8/34/38/39/40/41'
+uci set qmodem.3_1_2.nsa_band='41/78/79'
+uci set qmodem.3_1_2.sa_band='1/28/41/78/79'
+uci set qmodem.3_1_2.modes='qmi' 'gobinet' 'ecm' 'mbim' 'rndis' 'ncm'
+uci set qmodem.3_1_2.valid_at_ports='/dev/ttyUSB2' '/dev/ttyUSB3'
+uci set qmodem.3_1_2.at_port='/dev/ttyUSB3'
+uci set qmodem.3_1_2.ports='/dev/ttyUSB0' '/dev/ttyUSB1' '/dev/ttyUSB2' '/dev/ttyUSB3'
+# slot 4_1_2 - backup (disabled)
+uci set qmodem.4_1_2=modem-device
+uci set qmodem.4_1_2.path='/sys/bus/usb/devices/4-1.2/'
+uci set qmodem.4_1_2.data_interface='usb'
+uci set qmodem.4_1_2.enable_dial='1'
+uci set qmodem.4_1_2.soft_reboot='1'
+uci set qmodem.4_1_2.extend_prefix='1'
+uci set qmodem.4_1_2.pdp_type='ipv4v6'
+uci set qmodem.4_1_2.state='disabled'
+uci set qmodem.4_1_2.metric='11'
+uci set qmodem.4_1_2.name='rm500q-cn'
+uci set qmodem.4_1_2.network='wwan0'
+uci set qmodem.4_1_2.manufacturer='quectel'
+uci set qmodem.4_1_2.platform='qualcomm'
+uci set qmodem.4_1_2.wcdma_band='1/8'
+uci set qmodem.4_1_2.lte_band='1/3/5/8/34/38/39/40/41'
+uci set qmodem.4_1_2.nsa_band='41/78/79'
+uci set qmodem.4_1_2.sa_band='1/28/41/78/79'
+uci set qmodem.4_1_2.modes='qmi' 'gobinet' 'ecm' 'mbim' 'rndis' 'ncm'
+uci set qmodem.4_1_2.valid_at_ports='/dev/ttyUSB2' '/dev/ttyUSB3'
+uci set qmodem.4_1_2.at_port='/dev/ttyUSB3'
+uci set qmodem.4_1_2.ports='/dev/ttyUSB0' '/dev/ttyUSB1' '/dev/ttyUSB2' '/dev/ttyUSB3'
+uci commit qmodem
+# ===== TurboACC: flow offloading + fullcone NAT =====
+uci set turboacc.global.set='1'
+uci set turboacc.config.tcpcca='cubic'
+uci set turboacc.config.fastpath='flow_offloading'
+uci set turboacc.config.fastpath_fo_hw='0'
+uci set turboacc.config.fullcone='1'
+uci set firewall.@defaults[0].fullcone='1'
+uci commit turboacc
+uci commit firewall
+# ===== sysctl: docker-compatible bridge settings =====
+cat > /etc/sysctl.d/99-bridge.conf <<'EOF'
+net.bridge.bridge-nf-call-arptables = 0
+net.bridge.bridge-nf-call-ip6tables = 0
+net.bridge.bridge-nf-call-iptables = 0
+EOF
 uci -q set zz_config.@status[0].first_boot=0
 uci commit zz_config
 fi
