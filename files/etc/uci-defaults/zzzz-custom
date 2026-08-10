@@ -91,6 +91,15 @@ net.bridge.bridge-nf-call-arptables = 0
 net.bridge.bridge-nf-call-ip6tables = 0
 net.bridge.bridge-nf-call-iptables = 0
 EOF
+# ===== opkg feeds: Tencent LEDE mirror (latest stable 24.10.5) =====
+cat > /etc/opkg/distfeeds.conf <<'EOF'
+src/gz openwrt_core https://mirrors.tencent.com/lede/releases/24.10.5/targets/rockchip/armv8/packages
+src/gz openwrt_base https://mirrors.tencent.com/lede/releases/24.10.5/packages/aarch64_generic/base
+src/gz openwrt_luci https://mirrors.tencent.com/lede/releases/24.10.5/packages/aarch64_generic/luci
+src/gz openwrt_packages https://mirrors.tencent.com/lede/releases/24.10.5/packages/aarch64_generic/packages
+src/gz openwrt_routing https://mirrors.tencent.com/lede/releases/24.10.5/packages/aarch64_generic/routing
+src/gz openwrt_telephony https://mirrors.tencent.com/lede/releases/24.10.5/packages/aarch64_generic/telephony
+EOF
 uci -q set zz_config.@status[0].first_boot=0
 uci commit zz_config
 fi
