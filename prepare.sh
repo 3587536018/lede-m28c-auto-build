@@ -18,6 +18,7 @@ fi
 cat feeds.conf.default > feeds.conf
 echo "" >> feeds.conf
 echo "src-git qmodem https://github.com/FUjr/QModem.git;main
-src-git istore https://github.com/linkease/istore.git;main" >> feeds.conf
+src-git istore https://github.com/linkease/istore.git;main
+src-git openclash https://github.com/vernesong/OpenClash.git;master" >> feeds.conf
 rm -rf files
 cp -r ../files .
