@@ -4,6 +4,8 @@ if test $is_first_boot -gt 0; then
 #echo -e "m28cm28c\nm28cm28c" | (passwd root)
 uci set system.@system[0].hostname='wuming'
 uci commit system
+# 确保无预置 root 密码（首次登录自行设置）
+passwd -d root 2>/dev/null || true
 uci del dhcp.lan.ra_slaac
 uci set network.lan.ipaddr='192.168.1.1'
 uci add_list network.lan.ip6class='2_1_2v6'
