@@ -40,10 +40,9 @@ jobs:
         uses: actions/checkout@v4
       - name: Setup environment
         run: |
-          sudo ./install-env.sh 2>&1 | tee /tmp/envsetup.log
-          EXIT=${PIPESTATUS[0]}
-          if [ $EXIT -ne 0 ]; then
-            echo "=== env setup failed, pushing diagnostics to debug-env branch ==="
+          if ! sudo ./install-env.sh 2>&1 | tee /tmp/envsetup.log; then
+            EXIT=${PIPESTATUS[0]}
+            echo "=== env setup failed (exit $EXIT), pushing diagnostics to debug-env branch ==="
             git config user.email "build-bot@users.noreply.github.com"
             git config user.name "build-bot"
             git checkout -B debug-env
