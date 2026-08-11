@@ -43,5 +43,19 @@ if [ $retry -eq 0 ]; then
 fi
 
 echo "Start compiling with verbose logs"
-make V=0 -j$(nproc) || { echo "make failed"; exit 1; }
+make V=0 -j$(nproc) 2>&1 | tee /tmp/build.log
+MAKE_EXIT=${PIPESTATUS[0]}
+if [ $MAKE_EXIT -ne 0 ]; then
+  echo "make failed (exit $MAKE_EXIT), extracting diagnostics..."
+  {
+    echo "=== make failed exit=$MAKE_EXIT ==="
+    echo "--- errors from build.log ---"
+    grep -iE 'error|Error [0-9]|failed|No space' /tmp/build.log | tail -60
+    echo "--- last 30 lines ---"
+    tail -30 /tmp/build.log
+    echo "--- disk ---"
+    df -h
+  } > /tmp/buildfail.log
+  exit $MAKE_EXIT
+fi
 # make V=s -j1 || { echo "make failed"; exit 1; }  # 详细日志+单线程，便于排查错误

@@ -71,7 +71,18 @@ jobs:
           key: ${{ runner.os }}-openwrt-${{ hashFiles('lede/feeds.conf.default', 'm28c.config') }}
       - name: Build
         run: |
-          ./build.sh
+          if ! ./build.sh 2>&1 | tee /tmp/buildall.log; then
+            EXIT=${PIPESTATUS[0]}
+            echo "=== build failed (exit $EXIT), pushing diagnostics to debug-env branch ==="
+            git config user.email "build-bot@users.noreply.github.com"
+            git config user.name "build-bot"
+            git checkout -B debug-env
+            cp /tmp/buildfail.log debug-build.log 2>/dev/null || tail -100 /tmp/buildall.log > debug-build.log
+            git add debug-build.log
+            git commit -m "debug: build failure log"
+            git push origin debug-env
+            exit $EXIT
+          fi
       - name: Prepare release assets
         run: |
           mkdir -p release_assets
