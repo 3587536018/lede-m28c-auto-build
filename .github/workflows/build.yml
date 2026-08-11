@@ -29,7 +29,7 @@ jobs:
         uses: easimon/maximize-build-space@master
         with:
           root-reserve-mb: 4096
-          swap-size-mb: 2048
+          swap-size-mb: 4096
           remove-dotnet: 'true'
       - name: Manual cleanup for extra space
         run: |
@@ -86,13 +86,15 @@ jobs:
       - name: Prepare release assets
         run: |
           mkdir -p release_assets
-          cp lede/bin/targets/rockchip/armv8/*.img.gz release_assets/ || true
-          cp lede/bin/targets/rockchip/armv8/openwrt-rockchip-armv8-widora_mangopi-m28c.manifest release_assets/ || true
+          # 关键产物(.img.gz 固件 / manifest)缺失时必须失败，避免"假成功"发布空 release
+          cp lede/bin/targets/rockchip/armv8/*.img.gz release_assets/
+          cp lede/bin/targets/rockchip/armv8/openwrt-rockchip-armv8-widora_mangopi-m28c.manifest release_assets/
           cp lede/bin/targets/rockchip/armv8/config.buildinfo release_assets/ || true
           cp lede/bin/targets/rockchip/armv8/feeds.buildinfo release_assets/ || true
           cp lede/bin/targets/rockchip/armv8/profiles.json release_assets/ || true
           cp lede/bin/targets/rockchip/armv8/version.buildinfo release_assets/ || true
           cp lede/bin/targets/rockchip/armv8/sha256sums release_assets/ || true
+          ls -la release_assets
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:

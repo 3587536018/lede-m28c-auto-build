@@ -37,6 +37,18 @@ make defconfig || { echo "defconfig failed"; exit 1; }
 echo "Diff between original and generated config:"
 diff ../m28c.config .config || echo "Note: Config differences are normal (defconfig补充默认值)"
 
+echo "=== Verify target device after defconfig ==="
+grep -E '^CONFIG_TARGET_(rockchip|BOARD|SUBTARGET|PROFILE)' .config
+if ! grep -q '^CONFIG_TARGET_rockchip_armv8_DEVICE_widora_mangopi-m28c=y' .config; then
+  echo "ERROR: device widora_mangopi-m28c MISSING after defconfig!"
+  echo "If the device was removed/renamed in lede upstream, no image will be built."
+  exit 1
+fi
+echo "Device OK: widora_mangopi-m28c enabled"
+
+echo "=== Disk before make ==="
+df -h
+
 echo "Download dependencies (with retries)"
 retry=3
 while [ $retry -gt 0 ]; do
@@ -67,8 +79,14 @@ if [ $MAKE_EXIT -ne 0 ]; then
   } > /tmp/buildfail.log
   exit $MAKE_EXIT
 fi
-# 镜像产物检查：make 成功但未生成 .img.gz 时收集诊断（不再静默假成功）
+# 镜像产物检查：make 成功但未生成 .img.gz 时，先强制触发镜像构建再判断
 IMG_FILE=$(ls bin/targets/rockchip/armv8/*.img.gz 2>/dev/null | head -1)
+if [ -z "$IMG_FILE" ]; then
+  echo "=== WARNING: no image after make, forcing make image ==="
+  make V=0 -j2 image 2>&1 | tee -a /tmp/build.log
+  IMG_FILE=$(ls bin/targets/rockchip/armv8/*.img.gz 2>/dev/null | head -1)
+fi
+
 if [ -z "$IMG_FILE" ]; then
   echo "=== WARNING: make succeeded but NO image generated! collecting diagnostics ==="
   {
