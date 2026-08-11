@@ -43,7 +43,8 @@ if [ $retry -eq 0 ]; then
 fi
 
 echo "Start compiling with verbose logs"
-make V=0 -j$(nproc) 2>&1 | tee /tmp/build.log
+# -j2 保守并行: runner 内存 7GB, Go 包(openclash/adguardhome等)编译吃内存, 并发过高会 OOM
+make V=0 -j2 2>&1 | tee /tmp/build.log
 MAKE_EXIT=${PIPESTATUS[0]}
 if [ $MAKE_EXIT -ne 0 ]; then
   echo "make failed (exit $MAKE_EXIT), extracting diagnostics..."
