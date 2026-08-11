@@ -44,7 +44,9 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       - name: Setup environment
+        shell: bash
         run: |
+          set -o pipefail
           if ! sudo ./install-env.sh 2>&1 | tee /tmp/envsetup.log; then
             EXIT=${PIPESTATUS[0]}
             echo "=== env setup failed (exit $EXIT), pushing diagnostics to debug-env branch ==="
@@ -70,7 +72,9 @@ jobs:
 #            lede/build_dir
           key: ${{ runner.os }}-openwrt-${{ hashFiles('lede/feeds.conf.default', 'm28c.config') }}
       - name: Build
+        shell: bash
         run: |
+          set -o pipefail
           if ! ./build.sh 2>&1 | tee /tmp/buildall.log; then
             EXIT=${PIPESTATUS[0]}
             echo "=== build failed (exit $EXIT), pushing diagnostics to debug-env branch ==="

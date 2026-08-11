@@ -67,16 +67,20 @@ echo "Start compiling with verbose logs"
 make V=0 -j2 2>&1 | tee /tmp/build.log
 MAKE_EXIT=${PIPESTATUS[0]}
 if [ $MAKE_EXIT -ne 0 ]; then
-  echo "make failed (exit $MAKE_EXIT), extracting diagnostics..."
+  echo "make failed (exit $MAKE_EXIT), re-running with V=s to capture detailed error..."
+  # 增量重跑（已编译的包会跳过），用详细模式捕获真正失败原因
+  make V=s -j1 2>&1 | tee -a /tmp/build.log || true
   {
     echo "=== make failed exit=$MAKE_EXIT ==="
     echo "--- errors from build.log ---"
-    grep -iE 'error|Error [0-9]|failed|No space' /tmp/build.log | tail -60
-    echo "--- last 30 lines ---"
-    tail -30 /tmp/build.log
+    grep -iE 'error|Error [0-9]|failed|No space|not found|undefined|Cannot|cannot' /tmp/build.log | tail -80
+    echo "--- last 40 lines ---"
+    tail -40 /tmp/build.log
     echo "--- disk ---"
     df -h
-  } > /tmp/buildfail.log
+    echo "--- bin/targets/rockchip/armv8 ---"
+    ls -la bin/targets/rockchip/armv8/ 2>&1 | head -30
+  } | tee /tmp/buildfail.log
   exit $MAKE_EXIT
 fi
 # 镜像产物检查：make 成功但未生成 .img.gz 时，先强制触发镜像构建再判断
