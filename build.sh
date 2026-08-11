@@ -67,4 +67,26 @@ if [ $MAKE_EXIT -ne 0 ]; then
   } > /tmp/buildfail.log
   exit $MAKE_EXIT
 fi
+# 镜像产物检查：make 成功但未生成 .img.gz 时收集诊断（不再静默假成功）
+IMG_FILE=$(ls bin/targets/rockchip/armv8/*.img.gz 2>/dev/null | head -1)
+if [ -z "$IMG_FILE" ]; then
+  echo "=== WARNING: make succeeded but NO image generated! collecting diagnostics ==="
+  {
+    echo "=== NO IMAGE GENERATED (make exit 0) ==="
+    echo "--- bin/targets/rockchip/armv8/ ---"
+    ls -la bin/targets/rockchip/armv8/ 2>&1
+    echo "--- all img/gz files (excluding dl/staging) ---"
+    find . -path ./dl -prune -o -path ./staging_dir -prune -o \( -name '*.img' -o -name '*.img.gz' -o -name '*.gz' \) -print 2>/dev/null | head -30
+    echo "--- manifest/profiles exist? ---"
+    find . -name '*.manifest' -o -name 'profiles.json' -o -name 'sha256sums' 2>/dev/null | head -10
+    echo "--- kernel config check ---"
+    grep -E '^CONFIG_TARGET_(rockchip|BOARD|SUBTARGET|PROFILE)' .config | head -6
+    echo "--- disk ---"
+    df -h
+    echo "--- build.log last 60 lines ---"
+    tail -60 /tmp/build.log
+  } > /tmp/buildfail.log
+  exit 1
+fi
+echo "Image OK: $IMG_FILE"
 # make V=s -j1 || { echo "make failed"; exit 1; }  # 详细日志+单线程，便于排查错误
