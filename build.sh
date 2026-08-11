@@ -15,6 +15,14 @@ echo "Install feeds"
 
 echo "Install qmodem feeds"
 ./scripts/feeds install -a -p qmodem || { echo "install qmodem feeds failed"; exit 1; }  # 去掉 -f 选项
+# patch qmodem Makefile: remove dependencies that don't exist in this tree
+# (kmod-mhi-wwan / kmod-mhi-pci-generic / kmod-mhi-wwan-ctrl / kmod-mhi-wwan-mbim / quectel-CM-5G)
+QMODEM_MK=$(find package/feeds/qmodem -name Makefile | head -1)
+if [ -n "$QMODEM_MK" ]; then
+  sed -i '/kmod-mhi-wwan[[:space:]]*\\$/d; /kmod-mhi-pci-generic[[:space:]]*\\$/d; /kmod-mhi-wwan-ctrl[[:space:]]*\\$/d; /kmod-mhi-wwan-mbim[[:space:]]*\\$/d; /quectel-CM-5G[[:space:]]*\\$/d' "$QMODEM_MK"
+  echo "patched qmodem deps in $QMODEM_MK"
+  grep -cE 'kmod-mhi-wwan|quectel-CM-5G' "$QMODEM_MK" || true
+fi
 
 # 导入配置文件并检查
 if [ ! -f "../m28c.config" ]; then
