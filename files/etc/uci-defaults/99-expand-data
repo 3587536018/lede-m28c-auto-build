@@ -1,9 +1,8 @@
 #!/bin/sh
-# 99-expand-data: 首次启动自动扩展数据分区
-# - 检测启动磁盘（rootfs 所在 mmcblkX）
-# - 若不存在 p3，用 parted 将剩余全部空间创建为 p3 (ext4)
-# - 挂载到 /opt/docker，并配置 docker 数据目录
-# 幂等：p3 已存在则跳过创建，直接确保挂载
+# 99-expand-data: 首次启动自动扩展存储（幂等，可重复执行）
+# - ext4 rootfs   (方案2): rootfs 分区 resize2fs 扩展到磁盘 100%，系统原生吃满全盘
+# - squashfs rootfs (方案3): 创建 p3 数据分区(占满剩余)挂载到 /opt/docker 给 docker
+# 无论哪种，都自动配置 512MB swap
 
 set -u
 
@@ -17,7 +16,6 @@ case "$root_dev" in
     disk=$(echo "$root_dev" | sed 's/p[0-9]*$//')
     ;;
   *)
-    # fallback: 从挂载表找 rootfs 所在磁盘
     root_mnt=$(mount | awk '$2=="/rom" || $2=="/" {print $1; exit}')
     case "$root_mnt" in
       /dev/mmcblk*)
@@ -29,58 +27,82 @@ case "$root_dev" in
     esac
     ;;
 esac
-
 [ -n "${disk:-}" ] || exit 0
 [ -b "$disk" ] || exit 0
 
-# 2. 若 p3 不存在则创建（占满剩余空间）
-if [ ! -b "${disk}p3" ]; then
-  parted -s "$disk" mkpart primary ext4 4.2GiB 100% 2>/dev/null || exit 0
-  sleep 2
-  blockdev --rereadpt "$disk" 2>/dev/null || partprobe "$disk" 2>/dev/null || true
-  sleep 2
+# 2. 判断 rootfs 文件系统类型
+root_fs=$(mount | awk '$2=="/" {print $5; exit}')
+root_part=$(mount | awk '$2=="/" {print $1; exit}')
+
+case "$root_fs" in
+  ext4)
+    # ===== 方案2: ext4 rootfs 原生吃满整个磁盘 =====
+    # rootfs 分区起始不变，结束扩展到磁盘 100%，再 resize2fs 在线扩展
+    part_num=$(echo "$root_part" | sed 's/.*p\([0-9]*\)$/\1/')
+    [ -n "$part_num" ] || exit 0
+    part_start=$(parted -s "$disk" unit s print 2>/dev/null | awk -v n="$part_num" '$1==n {print $2}' | tr -d 's')
+    [ -n "$part_start" ] || exit 0
+    parted -s "$disk" rm "$part_num" 2>/dev/null
+    parted -s "$disk" mkpart primary "${part_start}s" 100% 2>/dev/null
+    blockdev --rereadpt "$disk" 2>/dev/null || partprobe "$disk" 2>/dev/null || partx -u "$root_part" 2>/dev/null || true
+    sleep 2
+    resize2fs "$root_part" 2>/dev/null || true
+    echo "ext4 rootfs expanded to full disk: $root_part"
+    # docker 数据默认在 /var/lib/docker（rootfs 内），无需单独分区
+    ;;
+  squashfs)
+    # ===== 方案3: squashfs - 创建 p3 数据分区给 docker =====
+    if [ ! -b "${disk}p3" ]; then
+      parted -s "$disk" mkpart primary ext4 4.2GiB 100% 2>/dev/null || exit 0
+      sleep 2
+      blockdev --rereadpt "$disk" 2>/dev/null || partprobe "$disk" 2>/dev/null || true
+      sleep 2
+    fi
+    if [ -b "${disk}p3" ]; then
+      if ! blkid "${disk}p3" | grep -q 'TYPE="ext4"'; then
+        mkfs.ext4 -F -L docker "${disk}p3" 2>/dev/null || exit 0
+      fi
+      mkdir -p /opt/docker
+      uuid=$(blkid -s UUID -o value "${disk}p3" 2>/dev/null || true)
+      if [ -n "$uuid" ]; then
+        uci -q delete fstab.docker
+        uci -q set fstab.docker=mount
+        uci -q set fstab.docker.uuid="$uuid"
+        uci -q set fstab.docker.target=/opt/docker
+        uci -q set fstab.docker.enabled=1
+        uci -q commit fstab
+      fi
+      mount /opt/docker 2>/dev/null || mount -t ext4 "${disk}p3" /opt/docker 2>/dev/null || true
+      if uci -q get dockerd.globals >/dev/null 2>&1; then
+        uci -q set dockerd.globals.data_root='/opt/docker'
+        uci -q commit dockerd
+      fi
+    fi
+    ;;
+  *)
+    exit 0
+    ;;
+esac
+
+# 3. swap 512MB（ext4 放 /var/swapfile，squashfs 放 /opt/docker/swapfile）
+if [ "$root_fs" = "ext4" ]; then
+  SWAP_FILE=/var/swapfile
+else
+  SWAP_FILE=/opt/docker/swapfile
 fi
-
-# 3. 确保 p3 可用并挂载
-if [ -b "${disk}p3" ]; then
-  if ! blkid "${disk}p3" | grep -q 'TYPE="ext4"'; then
-    mkfs.ext4 -F -L docker "${disk}p3" 2>/dev/null || exit 0
-  fi
-
-  mkdir -p /opt/docker
-
-  uuid=$(blkid -s UUID -o value "${disk}p3" 2>/dev/null || true)
-  if [ -n "$uuid" ]; then
-    uci -q delete fstab.docker
-    uci -q set fstab.docker=mount
-    uci -q set fstab.docker.uuid="$uuid"
-    uci -q set fstab.docker.target=/opt/docker
-    uci -q set fstab.docker.enabled=1
-    uci -q commit fstab
-  fi
-
-  mount /opt/docker 2>/dev/null || mount -t ext4 "${disk}p3" /opt/docker 2>/dev/null || true
-
-  # 4. 配置 docker 数据目录
-  if uci -q get dockerd.globals >/dev/null 2>&1; then
-    uci -q set dockerd.globals.data_root='/opt/docker'
-    uci -q commit dockerd
-  fi
+if [ ! -f "$SWAP_FILE" ]; then
+  mkdir -p "$(dirname "$SWAP_FILE")"
+  fallocate -l 512M "$SWAP_FILE" 2>/dev/null || dd if=/dev/zero of="$SWAP_FILE" bs=1M count=512 2>/dev/null
+  chmod 600 "$SWAP_FILE"
+  mkswap "$SWAP_FILE" 2>/dev/null
 fi
-
-# 5. swap 512MB (data partition)
-if [ -d /opt/docker ] && [ ! -f /opt/docker/swapfile ]; then
-  fallocate -l 512M /opt/docker/swapfile 2>/dev/null || dd if=/dev/zero of=/opt/docker/swapfile bs=1M count=512 2>/dev/null
-  chmod 600 /opt/docker/swapfile
-  mkswap /opt/docker/swapfile 2>/dev/null
-fi
-if [ -f /opt/docker/swapfile ]; then
+if [ -f "$SWAP_FILE" ]; then
   uci -q delete fstab.swap
   uci -q set fstab.swap=swap
-  uci -q set fstab.swap.device=/opt/docker/swapfile
+  uci -q set fstab.swap.device="$SWAP_FILE"
   uci -q set fstab.swap.enabled=1
   uci -q commit fstab
-  swapon /opt/docker/swapfile 2>/dev/null || true
+  swapon "$SWAP_FILE" 2>/dev/null || true
 fi
 
 exit 0
