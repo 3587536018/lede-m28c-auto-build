@@ -55,8 +55,8 @@ jobs:
             git checkout -B debug-env
             cp /tmp/envsetup.log debug-env.log
             git add debug-env.log
-            git commit -m "debug: environment setup failure log"
-            git push origin debug-env
+            git commit -m "debug: environment setup failure log" || true
+            git push -f origin debug-env || true
             exit $EXIT
           fi
       - name: Prepare
@@ -83,8 +83,8 @@ jobs:
             git checkout -B debug-env
             cp /tmp/buildfail.log debug-build.log 2>/dev/null || tail -100 /tmp/buildall.log > debug-build.log
             git add debug-build.log
-            git commit -m "debug: build failure log"
-            git push origin debug-env
+            git commit -m "debug: build failure log" || true
+            git push -f origin debug-env || true
             exit $EXIT
           fi
       - name: Prepare release assets
