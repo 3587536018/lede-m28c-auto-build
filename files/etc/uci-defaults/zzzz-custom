@@ -1,4 +1,9 @@
 #!/bin/sh
+# 语言与主题总是强制中文（不依赖 first_boot，防止 luci/iStore 显示英文）
+uci set luci.main.lang='zh_cn'
+uci set luci.main.mediaurlbase='/luci-static/argon'
+uci commit luci
+
 is_first_boot=`uci -q get zz_config.@status[0].first_boot`
 if test $is_first_boot -gt 0; then
 #echo -e "m28cm28c\nm28cm28c" | (passwd root)
@@ -11,8 +16,6 @@ uci set network.lan.ipaddr='192.168.1.1'
 uci add_list network.lan.ip6class='2_1_2v6'
 uci add_list network.lan.ip6class='3_1_2v6'
 uci add_list network.lan.ip6class='4_1_2v6'
-uci set luci.main.lang='zh_cn'
-uci set luci.main.mediaurlbase='/luci-static/argon'
 uci set cpufreq.global.set='1'
 uci set cpufreq.cpufreq.minfreq0='600000'
 uci set cpufreq.cpufreq.maxfreq0='1608000'
@@ -107,6 +110,14 @@ EOF
 uci -q set zz_config.@status[0].first_boot=0
 uci commit zz_config
 fi
+
+# ===== iStore 语言兜底：兼容 luci 输出的各种 zh 格式（zh_cn/zh-CN/zh-cn）=====
+for lf in zh_cn zh-CN zh_CN; do
+  if [ -f /www/luci-static/istore/i18n/zh-cn.json ] && [ ! -e "/www/luci-static/istore/i18n/$lf.json" ]; then
+    ln -sf zh-cn.json "/www/luci-static/istore/i18n/$lf.json"
+  fi
+
+done
 
 sed -i "s?set wireless\.default_radio\${devidx}\.ssid=LEDE?set wireless\.default_radio\${devidx}\.ssid=\'BRONYA\'?g" /lib/wifi/mac80211.sh
 sed -i "s?set wireless\.default_radio\${devidx}\.encryption=none?set wireless\.default_radio\${devidx}\.encryption=\'psk2+ccmp\'\n\t\t\tset wireless\.default_radio\${devidx}\.key=\'3587536018\'?g" /lib/wifi/mac80211.sh
