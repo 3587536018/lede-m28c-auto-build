@@ -58,6 +58,18 @@ echo "Device OK: widora_mangopi-m28c enabled"
 echo "=== Disk before make ==="
 df -h
 
+# ===== 修复 iStore 中文界面 =====
+# luci-app-store 的 store.lua: vue_lang() 用 i18n.translate("istore_vue_lang") 判断前端语言,
+# 但 luci-app-store 只打包了 zh-tw.lmo(没有 zh-cn), 翻译不到 → 回退 "en" → iStore 前端英文。
+# 修复: 回退语言从 "en" 改为 "zh-cn"(zh-cn.json 语言文件已在 /www/luci-static/istore/i18n/)
+ISTORE_CTRL=$(find feeds/istore -path '*luci-app-store*' -name store.lua 2>/dev/null | head -1)
+if [ -n "$ISTORE_CTRL" ] && grep -q 'lang = "en"' "$ISTORE_CTRL"; then
+  sed -i 's/lang = "en"/lang = "zh-cn"/' "$ISTORE_CTRL"
+  echo "patched istore vue_lang fallback to zh-cn: $ISTORE_CTRL"
+else
+  echo "istore store.lua not found or already patched"
+fi
+
 echo "Download dependencies (with retries)"
 retry=3
 while [ $retry -gt 0 ]; do
