@@ -17,11 +17,21 @@ echo "Install qmodem feeds"
 ./scripts/feeds install -a -p qmodem || { echo "install qmodem feeds failed"; exit 1; }  # 去掉 -f 选项
 # patch qmodem Makefile: remove dependencies that don't exist in this tree
 # (kmod-mhi-wwan / kmod-mhi-pci-generic / kmod-mhi-wwan-ctrl / kmod-mhi-wwan-mbim / quectel-CM-5G)
-# 遍历所有 Makefile（head -1 只 patch 第一个，可能漏掉主包）
-find package/feeds/qmodem -name Makefile -print0 | while IFS= read -r -d '' QMODEM_MK; do
+# 关键: package/feeds/qmodem 下是 symlink(feeds install 用 ln -sf), GNU find 默认不跟随 symlink,
+# 在 package/feeds/qmodem 下 find 不到 Makefile → patch 静默失效(曾导致 WARNING 残留)。
+# 因此改为直接 patch feeds/qmodem 源目录(真实文件), package/feeds 下的 symlink 指向这里, 改动自动生效。
+find feeds/qmodem -path '*/\.git' -prune -o -name Makefile -print0 | while IFS= read -r -d '' QMODEM_MK; do
   sed -i '/kmod-mhi-wwan[[:space:]]*\\$/d; /kmod-mhi-pci-generic[[:space:]]*\\$/d; /kmod-mhi-wwan-ctrl[[:space:]]*\\$/d; /kmod-mhi-wwan-mbim[[:space:]]*\\$/d; /quectel-CM-5G[[:space:]]*\\$/d' "$QMODEM_MK"
   echo "patched qmodem deps in $QMODEM_MK"
 done
+# 验证 patch 是否真正生效: 若仍有残留依赖则告警(不阻断构建, 因相关条件依赖已禁用)
+LEFTOVER=$(grep -rlE 'kmod-mhi-wwan|kmod-mhi-pci-generic|kmod-mhi-wwan-ctrl|kmod-mhi-wwan-mbim' feeds/qmodem --include=Makefile 2>/dev/null | grep -v '/\.git/')
+if [ -n "$LEFTOVER" ]; then
+  echo "WARNING: 以下 qmodem Makefile 仍含应删除的依赖(检查 sed 模式):"
+  echo "$LEFTOVER"
+else
+  echo "OK: 所有 qmodem Makefile 已清除 mhi 相关依赖"
+fi
 
 # 导入配置文件并检查
 if [ ! -f "../m28c.config" ]; then
