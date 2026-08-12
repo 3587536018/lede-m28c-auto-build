@@ -16,7 +16,7 @@ case "$root_dev" in
     disk=$(echo "$root_dev" | sed 's/p[0-9]*$//')
     ;;
   *)
-    root_mnt=$(mount | awk '$2=="/rom" || $2=="/" {print $1; exit}')
+    root_mnt=$(mount | awk '$3=="/rom" || $3=="/" {print $1; exit}')
     case "$root_mnt" in
       /dev/mmcblk*)
         disk=$(echo "$root_mnt" | sed 's/p[0-9]*$//')
@@ -31,8 +31,9 @@ esac
 [ -b "$disk" ] || exit 0
 
 # 2. 判断 rootfs 文件系统类型
-root_fs=$(mount | awk '$2=="/" {print $5; exit}')
-root_part=$(mount | awk '$2=="/" {print $1; exit}')
+# 注意: mount 输出为 "设备 on 挂载点 type 文件系统", 挂载点在 $3 (不能用 $2, 那是 "on")
+root_fs=$(mount | awk '$3=="/" {print $5; exit}')
+root_part=$(mount | awk '$3=="/" {print $1; exit}')
 
 case "$root_fs" in
   ext4)
