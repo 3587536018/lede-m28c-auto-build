@@ -42,12 +42,18 @@ jobs:
           sudo -E apt -y autoremove --purge 2>/dev/null || true
           sudo -E apt clean || true
       - name: Enable swap (4096MB, 防 OOM)
+        # 22.04 镜像自带 immutable 的 /swapfile; 全程容错, swap 失败不阻断构建
         run: |
-          sudo rm -f /swapfile
-          sudo fallocate -l 4096M /swapfile 2>/dev/null || sudo dd if=/dev/zero of=/swapfile bs=1M count=4096 || true
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
-          sudo swapon /swapfile
+          if sudo swapon --show | grep -q /swapfile; then
+            echo "swap already active"
+          else
+            sudo chattr -i /swapfile 2>/dev/null || true
+            sudo rm -f /swapfile 2>/dev/null || true
+            sudo fallocate -l 4096M /swapfile 2>/dev/null || sudo dd if=/dev/zero of=/swapfile bs=1M count=4096 2>/dev/null || true
+            sudo chmod 600 /swapfile 2>/dev/null || true
+            sudo mkswap /swapfile 2>/dev/null || true
+            sudo swapon /swapfile 2>/dev/null || true
+          fi
           free -h
       - name: Check build space after cleanup
         run: |
