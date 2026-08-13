@@ -71,6 +71,10 @@ jobs:
             lede/staging_dir
 #            lede/build_dir
           key: ${{ runner.os }}-openwrt-${{ hashFiles('lede/feeds.conf.default', 'm28c.config') }}
+          # 前缀回退: m28c.config 改变时仍可命中之前的 toolchain 缓存
+          # (08-12 成功构建 v0.260812.174439 保存的 staging_dir 完整工具链在 7 天有效期内)
+          restore-keys: |
+            ${{ runner.os }}-openwrt-
       - name: Build
         shell: bash
         run: |
