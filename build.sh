@@ -41,6 +41,8 @@ fi
 cat ../m28c.config > .config || { echo "Failed to copy m28c.config to .config"; exit 1; }
 
 echo "Generate defconfig"
+# 手动先跑一次 prepare-tmpinfo 并记录完整输出, 便于诊断 22.04 上 target 扫描失败
+make prepare-tmpinfo 2>&1 | tee /tmp/tmpinfo.log | tail -30
 make defconfig || { echo "defconfig failed"; exit 1; }
 
 echo "Diff between original and generated config:"
@@ -52,8 +54,17 @@ if ! grep -q '^CONFIG_TARGET_rockchip_armv8_DEVICE_widora_mangopi-m28c=y' .confi
   echo "ERROR: device widora_mangopi-m28c MISSING after defconfig!"
   echo "--- diagnostics ---"
   head -30 tmp/.config-target.in 2>/dev/null || echo "(tmp/.config-target.in missing)"
-  ls target/linux 2>/dev/null | head -20
-  git -C .. log -1 --oneline 2>/dev/null || true
+  echo "--- tmp/.targetinfo size ---"
+  wc -l tmp/.targetinfo 2>/dev/null || echo "(tmp/.targetinfo missing)"
+  echo "--- tmp/.targetinfo head ---"
+  head -20 tmp/.targetinfo 2>/dev/null
+  echo "--- FILELIST size ---"
+  wc -l tmp/info/.files-targetinfo* 2>/dev/null | head -3
+  echo "--- scan dump failure logs ---"
+  ls logs/target/linux/*/dump.txt 2>/dev/null | head -5
+  head -30 logs/target/linux/*/dump.txt 2>/dev/null | head -30
+  echo "--- prepare-tmpinfo tail ---"
+  tail -30 /tmp/tmpinfo.log 2>/dev/null
   exit 1
 fi
 echo "Device OK: widora_mangopi-m28c enabled"

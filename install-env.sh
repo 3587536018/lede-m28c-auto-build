@@ -1,13 +1,14 @@
 #!/bin/sh
 # install-env.sh - LEDE 构建环境依赖安装 (Ubuntu 22.04/24.04 自适应)
-# v3: 强制官方源 + update/install 重试 + 失败诊断输出
+# v4: 包列表完全对齐官方 LEDE CI (openwrt-ci.yml), 增加 full-upgrade 和旧源清理
 
 # ---------- 0. 架构适配 ----------
 ARCH=$(uname -m)
+# 官方 LEDE CI 完整包列表 (含 libncurses5-dev/libncursesw5-dev, mconf 需要 ncurses5 头)
 PKGS="ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
 bzip2 ccache clang cmake cpio curl device-tree-compiler flex gawk gettext \
 genisoimage git gperf haveged help2man intltool libelf-dev libfuse-dev libglib2.0-dev \
-libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses-dev libpython3-dev \
+libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev \
 libreadline-dev libssl-dev libtool llvm lrzsz msmtp ninja-build p7zip p7zip-full patch pkgconf \
 python3 python3-pyelftools python3-setuptools qemu-utils rsync scons squashfs-tools subversion \
 swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev"
@@ -16,7 +17,9 @@ if [ "$ARCH" = "x86_64" ]; then
   PKGS="$PKGS gcc-multilib g++-multilib libc6-dev-i386"
 fi
 
-# ---------- 1. 强制使用官方 Ubuntu 源 (runner 镜像源可能不稳定/失效) ----------
+# ---------- 1. 清理旧源 + 强制使用官方 Ubuntu 源 ----------
+# 官方 CI 会清空 sources.list.d 里 Microsoft 等第三方源(可能 GPG 过期污染 apt)
+sudo rm -rf /etc/apt/sources.list.d/* 2>/dev/null || true
 # 自适应 codename: 22.04=jammy / 24.04=noble
 CODENAME=$(lsb_release -cs 2>/dev/null || grep -oP '(?<=VERSION_CODENAME=)\w+' /etc/os-release | tr -d '"')
 [ -n "$CODENAME" ] || CODENAME=noble
@@ -44,7 +47,11 @@ if [ $update_ok -eq 0 ]; then
   exit 1
 fi
 
-# ---------- 3. apt-get install (失败重试 + 详细诊断) ----------
+# ---------- 3. 官方 CI 同款 full-upgrade (更新到最新 jammy/noble, 减少版本差异) ----------
+echo "=== apt-get full-upgrade ==="
+apt-get -y full-upgrade 2>/dev/null || true
+
+# ---------- 4. apt-get install (失败重试 + 详细诊断) ----------
 echo "=== apt-get install (attempt 1/2) ==="
 if ! apt-get install -y $PKGS; then
   echo "=== apt-get install failed, retrying after 10s ==="
