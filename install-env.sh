@@ -1,5 +1,5 @@
 #!/bin/sh
-# install-env.sh - LEDE 构建环境依赖安装 (Ubuntu 24.04)
+# install-env.sh - LEDE 构建环境依赖安装 (Ubuntu 22.04/24.04 自适应)
 # v3: 强制官方源 + update/install 重试 + 失败诊断输出
 
 # ---------- 0. 架构适配 ----------
@@ -17,10 +17,13 @@ if [ "$ARCH" = "x86_64" ]; then
 fi
 
 # ---------- 1. 强制使用官方 Ubuntu 源 (runner 镜像源可能不稳定/失效) ----------
-cat > /etc/apt/sources.list.d/ubuntu-official.sources <<'EOF'
+# 自适应 codename: 22.04=jammy / 24.04=noble
+CODENAME=$(lsb_release -cs 2>/dev/null || grep -oP '(?<=VERSION_CODENAME=)\w+' /etc/os-release | tr -d '"')
+[ -n "$CODENAME" ] || CODENAME=noble
+cat > /etc/apt/sources.list.d/ubuntu-official.sources <<EOF
 Types: deb
 URIs: https://archive.ubuntu.com/ubuntu/
-Suites: noble noble-updates noble-security
+Suites: $CODENAME $CODENAME-updates $CODENAME-security
 Components: main universe
 Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
 EOF

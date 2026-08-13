@@ -16,7 +16,10 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-24.04
+    # ubuntu-22.04: 官方 LEDE CI 验证环境(glibc 2.35)。
+    # 24.04(glibc 2.39) 上 binutils 2.4x 的 readelf.c 编译时混入 musl 头 → off64_t 错误,
+    # 且 8 月的"成功"构建全靠 cache 命中跳过 toolchain 编译, 冷编译必失败。
+    runs-on: ubuntu-22.04
     permissions:
       contents: write
     steps:
@@ -25,18 +28,28 @@ jobs:
           df -h
           lsblk
           free -h
-      - name: Maximize build space
-        uses: easimon/maximize-build-space@master
-        with:
-          root-reserve-mb: 4096
-          swap-size-mb: 4096
-          remove-dotnet: 'true'
-      - name: Manual cleanup for extra space
+      - name: Cleanup environment (official LEDE CI style)
+        # 不用 easimon/maximize-build-space: 它会移动/删除文件破坏 runner 环境
+        # (官方 issue: GitHub runner disk layout is a fast moving target, breaking this action)
+        # 照抄官方 LEDE CI 的 apt purge 清理方式
+        env:
+          DEBIAN_FRONTEND: noninteractive
         run: |
-          sudo rm -rf /usr/share/dotnet /opt/hostedtoolcache /usr/local/lib/android /opt/az /usr/local/share/powershell /usr/local/share/vcpkg 2>/dev/null || true
-          sudo rm -rf /usr/local/lib/node_modules /usr/share/swift /opt/ghc /usr/local/.ghcup 2>/dev/null || true
-          df -h
-      - name: Check build space after maximize-build-space
+          sudo -E rm -rf /usr/share/dotnet /etc/mysql /etc/php /usr/local/lib/android /opt/hostedtoolcache /usr/local/share/powershell 2>/dev/null || true
+          sudo -E apt-mark hold grub-efi-amd64-signed 2>/dev/null || true
+          sudo -E apt update || true
+          sudo -E apt -y purge azure-cli* docker* ghc* zulu* llvm* firefox google* dotnet* powershell* openjdk* mysql* php* mongodb* snap* 2>/dev/null || true
+          sudo -E apt -y autoremove --purge 2>/dev/null || true
+          sudo -E apt clean || true
+      - name: Enable swap (4096MB, 防 OOM)
+        run: |
+          sudo rm -f /swapfile
+          sudo fallocate -l 4096M /swapfile 2>/dev/null || sudo dd if=/dev/zero of=/swapfile bs=1M count=4096 || true
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          free -h
+      - name: Check build space after cleanup
         run: |
           df -h
           lsblk
