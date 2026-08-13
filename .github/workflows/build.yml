@@ -89,11 +89,12 @@ jobs:
             lede/dl
             lede/staging_dir
 #            lede/build_dir
-          key: ${{ runner.os }}-openwrt-${{ hashFiles('lede/feeds.conf.default', 'm28c.config') }}
-          # 前缀回退: m28c.config 改变时仍可命中之前的 toolchain 缓存
-          # (08-12 成功构建 v0.260812.174439 保存的 staging_dir 完整工具链在 7 天有效期内)
+          key: ${{ runner.os }}-22.04-openwrt-${{ hashFiles('lede/feeds.conf.default', 'm28c.config') }}
+          # 前缀回退只匹配 22.04 自己的缓存:
+          # staging_dir 里的 host 工具与 glibc 版本绑定, 24.04(glibc 2.39) 的缓存
+          # 在 22.04(glibc 2.35) 上无法运行(GLIB_2.38 not found), 会污染构建
           restore-keys: |
-            ${{ runner.os }}-openwrt-
+            ${{ runner.os }}-22.04-openwrt-
       - name: Build
         shell: bash
         run: |
