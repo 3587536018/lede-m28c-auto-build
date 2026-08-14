@@ -84,7 +84,7 @@ CONFIG_BINUTILS_VERSION="2.42"
 |---|---|---|---|
 | 1 | 全中文界面 | ✅ | LUCI 强制 zh_cn + 各插件中文包 |
 | 2 | QModem 新版界面 + 短信 + 监控 | ✅ | luci-app-qmodem-next / qmodem-monitor / sms-forwarder-next |
-| 3 | 科学上网 | ✅ | OpenClash + SSR-Plus（Xray/MosDNS 等全套） |
+| 3 | 科学上网 | ✅ | OpenClash（SSR-Plus 需 helloworld feed，当前未加入，配置已清理） |
 | 4 | Docker | ✅ | dockerd + docker-compose + luci-app-docker（顶层菜单） |
 | 5 | dockerman + 中文 | ✅(backup) | luci-app-dockerman + luci-i18n-dockerman-zh-cn |
 | 6 | iStore | ✅ | 见第 5 节 |
