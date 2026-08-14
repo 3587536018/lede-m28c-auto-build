@@ -1,88 +1,86 @@
 #!/bin/sh
 # 99-expand-data: 首次启动自动扩展存储（幂等，可重复执行）
-# 统一方案: rootfs 保持 1G 不扩, 剩余磁盘全部建成 p3 数据分区挂载到 /opt
+# 统一方案: rootfs 保持 1G 不扩, 剩余磁盘全部建成数据分区(自动编号)挂载到 /opt
 # (docker 数据目录指向 /opt/docker, swap 放 /opt/swapfile, 全部落在数据分区)
+#
+# 2026-08-14 修复:
+#   - 不再依赖 mount 输出判断 rootfs 类型(squashfs 时 / 是 overlay, 原判断直接 exit 0)
+#   - 分区号动态: 现有最大分区+1(原写死 p3, 若镜像布局变化会撞已有分区)
+#   - parted 由 m28c.config 的 CONFIG_PACKAGE_parted=y 提供(原固件无 parted, 建分区静默失败)
 
 set -u
 
-# 1. 找到启动磁盘
-root_dev=""
+# 1. 找到启动磁盘 (mmcblk*)
+disk=""
 if [ -L /dev/root ]; then
-  root_dev=$(readlink -f /dev/root 2>/dev/null || echo "")
+  rdev=$(readlink -f /dev/root 2>/dev/null || echo "")
+  case "$rdev" in
+    /dev/mmcblk*) disk=$(echo "$rdev" | sed 's/p[0-9]*$//') ;;
+  esac
 fi
-case "$root_dev" in
-  /dev/mmcblk*)
-    disk=$(echo "$root_dev" | sed 's/p[0-9]*$//')
-    ;;
-  *)
-    root_mnt=$(mount | awk '$3=="/rom" || $3=="/" {print $1; exit}')
-    case "$root_mnt" in
-      /dev/mmcblk*)
-        disk=$(echo "$root_mnt" | sed 's/p[0-9]*$//')
-        ;;
-      *)
-        disk=""
-        ;;
-    esac
-    ;;
-esac
+if [ -z "$disk" ]; then
+  # 兜底: 从 /proc/mounts 找 mmcblk 根分区
+  disk=$(awk '$1 ~ /^\/dev\/mmcblk/ { d=$1; sub(/p[0-9]+$/, "", d); print d; exit }' /proc/mounts)
+fi
 [ -n "${disk:-}" ] || exit 0
 [ -b "$disk" ] || exit 0
+echo "99-expand-data: disk=$disk"
 
-# 2. 判断 rootfs 文件系统类型
-# 注意: mount 输出为 "设备 on 挂载点 type 文件系统", 挂载点在 $3 (不能用 $2, 那是 "on")
-root_fs=$(mount | awk '$3=="/" {print $5; exit}')
-root_part=$(mount | awk '$3=="/" {print $1; exit}')
+# 2. 确定数据分区号 = 现有最大分区号 + 1
+last=0
+for p in /sys/class/block/$(basename "$disk")p*; do
+  [ -e "$p" ] || continue
+  n=${p##*p}
+  case "$n" in *[!0-9]*) continue ;; esac
+  [ "$n" -gt "$last" ] && last=$n
+done
+partnum=$((last + 1))
+PART="${disk}p${partnum}"
+echo "99-expand-data: data partition = $PART"
 
-case "$root_fs" in
-  ext4|squashfs)
-    # ===== 统一方案: rootfs 保持 1G 不扩, 剩余磁盘全部给 p3 挂载 /opt =====
-    # 镜像 rootfs 分区为 1G, 从 1.2GiB(留余量防对齐问题)到 100% 建 p3 数据分区
-    if [ ! -b "${disk}p3" ]; then
-      parted -s "$disk" mkpart primary ext4 1.2GiB 100% 2>/dev/null
-      sleep 2
-      blockdev --rereadpt "$disk" 2>/dev/null || partprobe "$disk" 2>/dev/null || true
-      sleep 2
-    fi
-    if [ -b "${disk}p3" ]; then
-      if ! blkid "${disk}p3" | grep -q 'TYPE="ext4"'; then
-        mkfs.ext4 -F -L opt "${disk}p3" 2>/dev/null || true
-      fi
-      mkdir -p /opt
-      uuid=$(blkid -s UUID -o value "${disk}p3" 2>/dev/null || true)
-      # 若 /opt 已有内容(老固件升级场景), 先迁移到 p3
-      if [ -n "$uuid" ] && [ "$(ls -A /opt 2>/dev/null | grep -v '^lost+found$')" ]; then
-        mkdir -p /mnt/opt-migrate
-        if mount -t ext4 "${disk}p3" /mnt/opt-migrate 2>/dev/null; then
-          cp -a /opt/. /mnt/opt-migrate/ 2>/dev/null || true
-          umount /mnt/opt-migrate 2>/dev/null || true
-        fi
-      fi
-      # 写 fstab (开机自动挂载 p3 → /opt)
-      if [ -n "$uuid" ]; then
-        uci -q delete fstab.opt
-        uci -q set fstab.opt=mount
-        uci -q set fstab.opt.uuid="$uuid"
-        uci -q set fstab.opt.target=/opt
-        uci -q set fstab.opt.enabled=1
-        uci -q commit fstab
-      fi
-      mount /opt 2>/dev/null || mount -t ext4 "${disk}p3" /opt 2>/dev/null || true
-      echo "p3 data partition mounted at /opt: ${disk}p3"
-      # docker 数据目录指向 /opt/docker (落在数据分区上)
-      mkdir -p /opt/docker
-      if uci -q get dockerd.globals >/dev/null 2>&1; then
-        uci -q set dockerd.globals.data_root='/opt/docker'
-        uci -q commit dockerd
-      fi
-    fi
-    ;;
-  *)
-    exit 0
-    ;;
-esac
+# 3. 创建数据分区(不存在时): 从 1.2GiB 起到 100%
+if [ ! -b "$PART" ]; then
+  command -v parted >/dev/null 2>&1 || { echo "99-expand-data: parted missing, skip"; exit 0; }
+  parted -s "$disk" mkpart primary ext4 1.2GiB 100% 2>/dev/null || exit 0
+  sleep 2
+  blockdev --rereadpt "$disk" 2>/dev/null || partprobe "$disk" 2>/dev/null || true
+  sleep 2
+fi
+[ -b "$PART" ] || exit 0
 
-# 3. swap 512MB (放 /opt 数据分区)
+# 4. 格式化(仅当非 ext4)、写 fstab、挂载 /opt
+if ! blkid "$PART" | grep -q 'TYPE="ext4"'; then
+  mkfs.ext4 -F -L opt "$PART" 2>/dev/null || true
+fi
+mkdir -p /opt
+uuid=$(blkid -s UUID -o value "$PART" 2>/dev/null || true)
+# 若 /opt 已有内容(老固件升级场景), 先迁移到数据分区
+if [ -n "$uuid" ] && [ "$(ls -A /opt 2>/dev/null | grep -v '^lost+found$')" ]; then
+  mkdir -p /mnt/opt-migrate
+  if mount -t ext4 "$PART" /mnt/opt-migrate 2>/dev/null; then
+    cp -a /opt/. /mnt/opt-migrate/ 2>/dev/null || true
+    umount /mnt/opt-migrate 2>/dev/null || true
+  fi
+fi
+# 写 fstab (开机自动挂载 → /opt)
+if [ -n "$uuid" ]; then
+  uci -q delete fstab.opt
+  uci -q set fstab.opt=mount
+  uci -q set fstab.opt.uuid="$uuid"
+  uci -q set fstab.opt.target=/opt
+  uci -q set fstab.opt.enabled=1
+  uci -q commit fstab
+fi
+mount /opt 2>/dev/null || mount -t ext4 "$PART" /opt 2>/dev/null || true
+echo "99-expand-data: $PART mounted at /opt"
+# docker 数据目录指向 /opt/docker (落在数据分区上)
+mkdir -p /opt/docker
+if uci -q get dockerd.globals >/dev/null 2>&1; then
+  uci -q set dockerd.globals.data_root='/opt/docker'
+  uci -q commit dockerd
+fi
+
+# 5. swap 512MB (放 /opt 数据分区)
 SWAP_FILE=/opt/swapfile
 if [ ! -f "$SWAP_FILE" ]; then
   mkdir -p /opt

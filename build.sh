@@ -13,6 +13,11 @@ echo "Update feeds"
 echo "Install feeds"
 ./scripts/feeds install -a || { echo "install feeds failed"; exit 1; }
 
+# 移除未启用的 luci-app-passwall(其依赖 ipt2socks/hysteria 等不在本构建树,
+# 保留会触发 "has a dependency on ... which does not exist" WARNING, 污染日志)
+rm -rf package/feeds/luci/luci-app-passwall feeds/luci/applications/luci-app-passwall 2>/dev/null
+echo "removed luci-app-passwall (avoid dependency warnings)"
+
 echo "Install qmodem feeds"
 ./scripts/feeds install -a -p qmodem || { echo "install qmodem feeds failed"; exit 1; }  # 去掉 -f 选项
 # patch qmodem Makefile: remove dependencies that don't exist in this tree
