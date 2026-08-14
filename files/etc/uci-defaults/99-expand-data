@@ -37,19 +37,46 @@ root_part=$(mount | awk '$3=="/" {print $1; exit}')
 
 case "$root_fs" in
   ext4)
-    # ===== 方案2: ext4 rootfs 原生吃满整个磁盘 =====
-    # rootfs 分区起始不变，结束扩展到磁盘 100%，再 resize2fs 在线扩展
+    # ===== 方案2: ext4 rootfs 扩到 8G + p3 数据分区吃满剩余磁盘 =====
+    # LEDE 的 ext4 镜像带 reserve_backup_gdb, resize2fs 在线扩容有约 6G 上限,
+    # 不能直接吃到 100%。因此: rootfs 扩到 8G(装包足够), 剩余全部给 p3 挂 /opt/docker
     part_num=$(echo "$root_part" | sed 's/.*p\([0-9]*\)$/\1/')
     [ -n "$part_num" ] || exit 0
     part_start=$(parted -s "$disk" unit s print 2>/dev/null | awk -v n="$part_num" '$1==n {print $2}' | tr -d 's')
     [ -n "$part_start" ] || exit 0
     parted -s "$disk" rm "$part_num" 2>/dev/null
-    parted -s "$disk" mkpart primary "${part_start}s" 100% 2>/dev/null
+    parted -s "$disk" mkpart primary "${part_start}s" 8GiB 2>/dev/null
     blockdev --rereadpt "$disk" 2>/dev/null || partprobe "$disk" 2>/dev/null || partx -u "$root_part" 2>/dev/null || true
     sleep 2
     resize2fs "$root_part" 2>/dev/null || true
-    echo "ext4 rootfs expanded to full disk: $root_part"
-    # docker 数据默认在 /var/lib/docker（rootfs 内），无需单独分区
+    echo "ext4 rootfs resized to 8GiB: $root_part"
+    # p3: 占满剩余磁盘(8.2GiB 起, 留 0.2G 余量防对齐问题)
+    if [ ! -b "${disk}p3" ]; then
+      parted -s "$disk" mkpart primary ext4 8.2GiB 100% 2>/dev/null
+      sleep 2
+      blockdev --rereadpt "$disk" 2>/dev/null || partprobe "$disk" 2>/dev/null || true
+      sleep 2
+    fi
+    if [ -b "${disk}p3" ]; then
+      if ! blkid "${disk}p3" | grep -q 'TYPE="ext4"'; then
+        mkfs.ext4 -F -L docker "${disk}p3" 2>/dev/null || true
+      fi
+      mkdir -p /opt/docker
+      uuid=$(blkid -s UUID -o value "${disk}p3" 2>/dev/null || true)
+      if [ -n "$uuid" ]; then
+        uci -q delete fstab.docker
+        uci -q set fstab.docker=mount
+        uci -q set fstab.docker.uuid="$uuid"
+        uci -q set fstab.docker.target=/opt/docker
+        uci -q set fstab.docker.enabled=1
+        uci -q commit fstab
+      fi
+      mount /opt/docker 2>/dev/null || mount -t ext4 "${disk}p3" /opt/docker 2>/dev/null || true
+      if uci -q get dockerd.globals >/dev/null 2>&1; then
+        uci -q set dockerd.globals.data_root='/opt/docker'
+        uci -q commit dockerd
+      fi
+    fi
     ;;
   squashfs)
     # ===== 方案3: squashfs - 创建 p3 数据分区给 docker =====
