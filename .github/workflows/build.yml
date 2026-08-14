@@ -17,8 +17,10 @@ on:
 jobs:
   build:
     # ubuntu-22.04: 官方 LEDE CI 验证环境(glibc 2.35)。
-    # 24.04(glibc 2.39) 上 binutils 2.4x 的 readelf.c 编译时混入 musl 头 → off64_t 错误,
-    # 且 8 月的"成功"构建全靠 cache 命中跳过 toolchain 编译, 冷编译必失败。
+    # 24.04(glibc 2.39) 上 binutils 2.4x 的 readelf.c 编译时混入 musl 头 → off64_t 错误。
+    # 教训(Run 66 vs 70-74): 缓存 staging_dir 但不缓存 build_dir 会恢复出"半成品工具链",
+    # binutils 重编时混入缓存里的 musl 头 → off64_t; binutils 被跳过时用缓存旧 ar 打包
+    # libgcc → stack smashing。冷编译(Run 66)可成功, 因此工具链必须每次全量冷编译。
     runs-on: ubuntu-22.04
     permissions:
       contents: write
@@ -81,20 +83,20 @@ jobs:
       - name: Prepare
         run: |
           ./prepare.sh
-      - name: Cache OpenWrt dl and toolchain
+      - name: Cache OpenWrt dl (sources only)
         uses: actions/cache@v3
         if: always()
         with:
+          # 只缓存 lede/dl(源码下载): staging_dir 里的 host 工具与 runner 镜像绑定,
+          # 且缓存不含 build_dir 会导致工具链半成品恢复(Run 70-74 全部因此失败)。
+          # 工具链每次冷编译(同 Run 66), 这是官方 LEDE CI 的做法。
           path: |
             lede/dl
-            lede/staging_dir
-#            lede/build_dir
-          key: ${{ runner.os }}-22.04-openwrt-${{ hashFiles('lede/feeds.conf.default', 'm28c.config') }}
-          # 前缀回退只匹配 22.04 自己的缓存:
-          # staging_dir 里的 host 工具与 glibc 版本绑定, 24.04(glibc 2.39) 的缓存
-          # 在 22.04(glibc 2.35) 上无法运行(GLIB_2.38 not found), 会污染构建
+          key: ${{ runner.os }}-22.04-openwrt-v2-${{ hashFiles('lede/feeds.conf.default', 'm28c.config') }}
+          # -v2- 版本标记: 使 8/13 之前带 staging_dir 的旧缓存永久失效
+          # (restore-key 前缀匹配会把旧毒缓存恢复出来, 仅改路径不够)
           restore-keys: |
-            ${{ runner.os }}-22.04-openwrt-
+            ${{ runner.os }}-22.04-openwrt-v2-
       - name: Build
         shell: bash
         run: |
