@@ -73,6 +73,27 @@ echo "Device OK: widora_mangopi-m28c enabled"
 # 会强制 2.42(显式禁用也无效)。22.04(官方 LEDE CI 环境) 上 2.42 编译正常, 无需干预。
 grep '^CONFIG_BINUTILS_VERSION=' .config || true
 
+# ===== binutils off64_t 防御性修复 (对称宏) =====
+# readelf.c 使用 off64_t/fseeko64, 编译时可能混入 musl 头(无 _LARGEFILE64_SOURCE 时不定义 off64_t)。
+# Run 66 证明 22.04 cold build 正常, 但 Run 70 同环境却撞 off64_t(环境存在未明差异)。
+# 对称给 HOST_CFLAGS(host 编译+configure) 和 TARGET_CFLAGS(cross 工具) 加宏, 保证一致性:
+# 只加 HOST 会致 cross ar 的 configure 与编译不一致 → 打包 libgcc 栈崩溃
+python3 - <<'PYEOF'
+p = 'toolchain/binutils/Makefile'
+try:
+    s = open(p).read()
+except FileNotFoundError:
+    print('binutils Makefile not found, skip patch')
+else:
+    if 'LARGEFILE64_SOURCE' not in s:
+        s = s.replace('HOST_CONFIGURE_VARS += \\',
+                      'HOST_CFLAGS += -D_LARGEFILE64_SOURCE\nTARGET_CFLAGS += -D_LARGEFILE64_SOURCE\nHOST_CONFIGURE_VARS += \\', 1)
+        open(p, 'w').write(s)
+        print('patched binutils Makefile: HOST_CFLAGS + TARGET_CFLAGS += -D_LARGEFILE64_SOURCE')
+    else:
+        print('binutils already patched')
+PYEOF
+
 echo "=== Disk before make ==="
 df -h
 
