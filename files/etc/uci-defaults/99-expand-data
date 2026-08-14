@@ -1,8 +1,7 @@
 #!/bin/sh
 # 99-expand-data: 首次启动自动扩展存储（幂等，可重复执行）
-# - ext4 rootfs   (方案2): rootfs 分区 resize2fs 扩展到磁盘 100%，系统原生吃满全盘
-# - squashfs rootfs (方案3): 创建 p3 数据分区(占满剩余)挂载到 /opt/docker 给 docker
-# 无论哪种，都自动配置 512MB swap
+# 统一方案: rootfs 保持 1G 不扩, 剩余磁盘全部建成 p3 数据分区挂载到 /opt
+# (docker 数据目录指向 /opt/docker, swap 放 /opt/swapfile, 全部落在数据分区)
 
 set -u
 
@@ -36,44 +35,42 @@ root_fs=$(mount | awk '$3=="/" {print $5; exit}')
 root_part=$(mount | awk '$3=="/" {print $1; exit}')
 
 case "$root_fs" in
-  ext4)
-    # ===== 方案2: ext4 rootfs 原生吃满整个磁盘 =====
-    # rootfs 分区起始不变，结束扩展到磁盘 100%，再 resize2fs 在线扩展
-    part_num=$(echo "$root_part" | sed 's/.*p\([0-9]*\)$/\1/')
-    [ -n "$part_num" ] || exit 0
-    part_start=$(parted -s "$disk" unit s print 2>/dev/null | awk -v n="$part_num" '$1==n {print $2}' | tr -d 's')
-    [ -n "$part_start" ] || exit 0
-    parted -s "$disk" rm "$part_num" 2>/dev/null
-    parted -s "$disk" mkpart primary "${part_start}s" 100% 2>/dev/null
-    blockdev --rereadpt "$disk" 2>/dev/null || partprobe "$disk" 2>/dev/null || partx -u "$root_part" 2>/dev/null || true
-    sleep 2
-    resize2fs "$root_part" 2>/dev/null || true
-    echo "ext4 rootfs expanded to full disk: $root_part"
-    # docker 数据默认在 /var/lib/docker（rootfs 内），无需单独分区
-    ;;
-  squashfs)
-    # ===== 方案3: squashfs - 创建 p3 数据分区给 docker =====
+  ext4|squashfs)
+    # ===== 统一方案: rootfs 保持 1G 不扩, 剩余磁盘全部给 p3 挂载 /opt =====
+    # 镜像 rootfs 分区为 1G, 从 1.2GiB(留余量防对齐问题)到 100% 建 p3 数据分区
     if [ ! -b "${disk}p3" ]; then
-      parted -s "$disk" mkpart primary ext4 4.2GiB 100% 2>/dev/null || exit 0
+      parted -s "$disk" mkpart primary ext4 1.2GiB 100% 2>/dev/null
       sleep 2
       blockdev --rereadpt "$disk" 2>/dev/null || partprobe "$disk" 2>/dev/null || true
       sleep 2
     fi
     if [ -b "${disk}p3" ]; then
       if ! blkid "${disk}p3" | grep -q 'TYPE="ext4"'; then
-        mkfs.ext4 -F -L docker "${disk}p3" 2>/dev/null || exit 0
+        mkfs.ext4 -F -L opt "${disk}p3" 2>/dev/null || true
       fi
-      mkdir -p /opt/docker
+      mkdir -p /opt
       uuid=$(blkid -s UUID -o value "${disk}p3" 2>/dev/null || true)
+      # 若 /opt 已有内容(老固件升级场景), 先迁移到 p3
+      if [ -n "$uuid" ] && [ "$(ls -A /opt 2>/dev/null | grep -v '^lost+found$')" ]; then
+        mkdir -p /mnt/opt-migrate
+        if mount -t ext4 "${disk}p3" /mnt/opt-migrate 2>/dev/null; then
+          cp -a /opt/. /mnt/opt-migrate/ 2>/dev/null || true
+          umount /mnt/opt-migrate 2>/dev/null || true
+        fi
+      fi
+      # 写 fstab (开机自动挂载 p3 → /opt)
       if [ -n "$uuid" ]; then
-        uci -q delete fstab.docker
-        uci -q set fstab.docker=mount
-        uci -q set fstab.docker.uuid="$uuid"
-        uci -q set fstab.docker.target=/opt/docker
-        uci -q set fstab.docker.enabled=1
+        uci -q delete fstab.opt
+        uci -q set fstab.opt=mount
+        uci -q set fstab.opt.uuid="$uuid"
+        uci -q set fstab.opt.target=/opt
+        uci -q set fstab.opt.enabled=1
         uci -q commit fstab
       fi
-      mount /opt/docker 2>/dev/null || mount -t ext4 "${disk}p3" /opt/docker 2>/dev/null || true
+      mount /opt 2>/dev/null || mount -t ext4 "${disk}p3" /opt 2>/dev/null || true
+      echo "p3 data partition mounted at /opt: ${disk}p3"
+      # docker 数据目录指向 /opt/docker (落在数据分区上)
+      mkdir -p /opt/docker
       if uci -q get dockerd.globals >/dev/null 2>&1; then
         uci -q set dockerd.globals.data_root='/opt/docker'
         uci -q commit dockerd
@@ -85,14 +82,10 @@ case "$root_fs" in
     ;;
 esac
 
-# 3. swap 512MB（ext4 放 /var/swapfile，squashfs 放 /opt/docker/swapfile）
-if [ "$root_fs" = "ext4" ]; then
-  SWAP_FILE=/var/swapfile
-else
-  SWAP_FILE=/opt/docker/swapfile
-fi
+# 3. swap 512MB (放 /opt 数据分区)
+SWAP_FILE=/opt/swapfile
 if [ ! -f "$SWAP_FILE" ]; then
-  mkdir -p "$(dirname "$SWAP_FILE")"
+  mkdir -p /opt
   fallocate -l 512M "$SWAP_FILE" 2>/dev/null || dd if=/dev/zero of="$SWAP_FILE" bs=1M count=512 2>/dev/null
   chmod 600 "$SWAP_FILE"
   mkswap "$SWAP_FILE" 2>/dev/null

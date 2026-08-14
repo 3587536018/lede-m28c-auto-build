@@ -69,20 +69,35 @@ if ! grep -q '^CONFIG_TARGET_rockchip_armv8_DEVICE_widora_mangopi-m28c=y' .confi
 fi
 echo "Device OK: widora_mangopi-m28c enabled"
 
-# binutils 版本: 必须 2.40(2.42/2.43.1 的 aarch64 ar 打包 libgcc 栈崩溃)。
-# DEVEL+TOOLCHAINOPTS+USE_VERSION_2_40 才能让 choice 可见并稳定 2.40。
-BINUTILS_V=$(grep '^CONFIG_BINUTILS_VERSION=' .config | cut -d'"' -f2)
-echo "binutils version: ${BINUTILS_V:-unknown}"
-if [ "$BINUTILS_V" != "2.40" ]; then
-  echo "ERROR: binutils is '${BINUTILS_V:-unknown}' not 2.40! (defconfig reset it)"
-  exit 1
-fi
-echo "binutils OK: 2.40"
+# binutils 版本说明: 无 DEVEL 时 Config.version 的 "BINUTILS_VERSION_2_42 default y if !TOOLCHAINOPTS"
+# 会强制 2.42(显式禁用也无效)。22.04(官方 LEDE CI 环境) 上 2.42 编译正常(Run 66 冷编译成功), 无需干预。
+grep '^CONFIG_BINUTILS_VERSION=' .config || true
 
 # ===== binutils off64_t 防御性修复 (对称宏) =====
 # readelf.c 使用 off64_t/fseeko64, 编译时可能混入 musl 头(无 _LARGEFILE64_SOURCE 时不定义 off64_t)。
 # 22.04 runner 镜像批次更新后 off64_t 问题回归(Run 66 成功/Run 70+72 失败, 同配置)。
 # 对称给 HOST_CFLAGS(host 编译+configure) 和 TARGET_CFLAGS(cross 工具) 加宏保证一致性:
+# 只加 HOST 会致 cross ar 的 configure 与编译不一致 → 打包 libgcc 栈崩溃
+python3 - <<'PYEOF'
+p = 'toolchain/binutils/Makefile'
+try:
+    s = open(p).read()
+except FileNotFoundError:
+    print('binutils Makefile not found, skip patch')
+else:
+    if 'LARGEFILE64_SOURCE' not in s:
+        s = s.replace('HOST_CONFIGURE_VARS += \\',
+                      'HOST_CFLAGS += -D_LARGEFILE64_SOURCE\nTARGET_CFLAGS += -D_LARGEFILE64_SOURCE\nHOST_CONFIGURE_VARS += \\', 1)
+        open(p, 'w').write(s)
+        print('patched binutils Makefile: HOST_CFLAGS + TARGET_CFLAGS += -D_LARGEFILE64_SOURCE')
+    else:
+        print('binutils already patched')
+PYEOF
+
+# ===== binutils off64_t 防御性修复 (对称宏) =====
+# readelf.c 使用 off64_t/fseeko64, 编译时可能混入 musl 头(无 _LARGEFILE64_SOURCE 时不定义 off64_t)。
+# Run 66 证明 22.04 cold build 正常, 但 Run 70 同环境却撞 off64_t(环境存在未明差异)。
+# 对称给 HOST_CFLAGS(host 编译+configure) 和 TARGET_CFLAGS(cross 工具) 加宏, 保证一致性:
 # 只加 HOST 会致 cross ar 的 configure 与编译不一致 → 打包 libgcc 栈崩溃
 python3 - <<'PYEOF'
 p = 'toolchain/binutils/Makefile'
@@ -113,6 +128,31 @@ if [ -n "$ISTORE_CTRL" ] && grep -q 'lang = "en"' "$ISTORE_CTRL"; then
   echo "patched istore vue_lang fallback to zh-cn: $ISTORE_CTRL"
 else
   echo "istore store.lua not found or already patched"
+fi
+
+# ===== iStore 中文语言包: 生成 store.zh-cn.lmo =====
+# luci-app-store 没有 po/ 目录, luci 菜单标题 _("iStore") 无 .lmo 翻译, 永远显示英文。
+# 1) 直接用 po2lmo(luci feed 自带源码) 编译生成 zh-cn lmo 放入固件
+# 2) sed 直改菜单标题为中文(保底, 即使 lmo 格式有问题也生效)
+if [ -n "$ISTORE_CTRL" ]; then
+  # 菜单标题直接中文化(保底)
+  sed -i 's/_("iStore"), 31)/"iStore 应用商店", 31)/' "$ISTORE_CTRL"
+  echo "patched istore menu title to Chinese"
+  # 生成 zh-cn.lmo(正规语言包方式)
+  PO2LMO_SRC=$(find feeds/luci -path '*tools/po2lmo.c' 2>/dev/null | head -1)
+  if [ -n "$PO2LMO_SRC" ]; then
+    gcc -o /tmp/po2lmo "$PO2LMO_SRC" -I "$(dirname "$PO2LMO_SRC")" 2>/dev/null || gcc -o /tmp/po2lmo "$PO2LMO_SRC" 2>/dev/null || true
+  fi
+  if [ -x /tmp/po2lmo ]; then
+    mkdir -p files/usr/lib/lua/luci/i18n
+    printf 'msgid "iStore"\nmsgstr "iStore 应用商店"\n' > /tmp/store.po
+    /tmp/po2lmo /tmp/store.po files/usr/lib/lua/luci/i18n/store.zh-cn.lmo 2>/dev/null \
+      || /tmp/po2lmo /tmp/store.po > files/usr/lib/lua/luci/i18n/store.zh-cn.lmo 2>/dev/null \
+      || true
+    [ -s files/usr/lib/lua/luci/i18n/store.zh-cn.lmo ] && echo "generated istore zh-cn lmo" || echo "lmo generation failed (menu sed fallback already applied)"
+  else
+    echo "po2lmo compile failed (menu sed fallback already applied)"
+  fi
 fi
 
 echo "Download dependencies (with retries)"

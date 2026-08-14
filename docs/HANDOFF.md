@@ -21,13 +21,13 @@
 ## 2. 分支结构
 
 ```
-main (fa5eec2)   = 成功配置 16be226 + 1G 镜像 + 宏 patch + 强制 binutils 2.40
-                   → Run 74 验证中（2.40 的 ar 打包 libgcc 是否通过）
+main = 全功能合并版（基于 Run 66 成功配置 16be226）：
+       dockerman + 1G 镜像 + /opt 数据分区 + iStore 全套修复 + OpenSSH 默认
+       + 缓存修复（只缓存 dl，key -v2-）+ binutils 2.42 默认
 backup-main-fullfeature (0e8a94a)
-                 = 全部功能修改完整版：dockerman、1G、/opt 扩容、
-                   iStore 全套修复、OpenSSH 默认化
+       = 全功能修改原始分支（已合并进 main，保留备份）
 backup-before-reset
-                 = 早期 2.40+宏+22.04 折腾史（可忽略）
+       = 早期 2.40+宏+22.04 折腾史（可忽略）
 ```
 
 ---
@@ -47,26 +47,20 @@ backup-before-reset
 | 障碍 | 根因 | 解法 |
 |---|---|---|
 | readelf.c `off64_t` 未定义 | binutils 编译混入 musl 头；**runner 镜像批次会变**（同配置 Run 66 成功 / 70 失败） | build.sh 内 Python 幂等 patch：`HOST_CFLAGS += -D_LARGEFILE64_SOURCE` + `TARGET_CFLAGS += ...`（必须对称，否则 ar configure/编译不一致） |
-| aarch64 cross ar 打包 libgcc.a `stack smashing` | binutils 2.42/2.43.1 的 aarch64 ar 缺陷；**官方 CI 只构建 x86 从未暴露** | 强制 binutils **2.40**（见 3.3） |
+| aarch64 cross ar 打包 libgcc.a `stack smashing` | 缓存恢复的旧 ar 所致：缓存只含 staging_dir 不含 build_dir，工具链半成品恢复后 binutils 被跳过，仍用旧 ar；**Run 66 冷编译 2.42 成功，非 2.42 缺陷** | 缓存只留 dl（key `-v2-`），工具链每次冷编译（见 3.3） |
 
-### 3.3 强制 binutils 2.40 的正确写法
+### 3.3 binutils 版本策略（当前：2.42 默认）
 
 无 DEVEL 时 binutils choice 不可见，`BINUTILS_VERSION_2_42` 有
 `default y if !TOOLCHAINOPTS`，defconfig 会强制 2.42。
 `# CONFIG_BINUTILS_VERSION_2_42 is not set` 对此**无效**。
 
-`m28c.config` 必须同时包含：
+当前 `m28c.config` 声明（defconfig 后实际生效为 2.42，build.sh 只打印不强制）：
 
 ```
-CONFIG_DEVEL=y
-CONFIG_TOOLCHAINOPTS=y
-CONFIG_BINUTILS_USE_VERSION_2_40=y
-# CONFIG_BINUTILS_VERSION_2_42 is not set
-# CONFIG_BINUTILS_VERSION_2_43 is not set
-CONFIG_BINUTILS_VERSION="2.40"
+CONFIG_BINUTILS_VERSION_2_42=y
+CONFIG_BINUTILS_VERSION="2.42"
 ```
-
-`build.sh` 在 defconfig 后验证版本，不匹配立即失败（1 分钟，不浪费 30 分钟）。
 
 ### 3.4 环境安装
 
@@ -180,9 +174,10 @@ ssh root@192.168.1.1      # 密码 wuming
 
 ## 10. 当前状态与下一步
 
-1. **Run 74 进行中**：验证 binutils 2.40 的 ar 是否通过 libgcc 打包
-   （关键节点：开始后约 30-40 分钟）
-2. Run 74 成功后：把 `backup-main-fullfeature` 的功能修改合并回 main，编译最终全功能固件
-   （合并要点：m28c.config 的功能包段、files/ 的 99-expand-data / zzzz-custom / istore-meta.conf、build.sh 的 iStore patch）
-3. 若 2.40 的 ar 仍崩：给 binutils TARGET_CFLAGS 加 `-fno-stack-protector`（构建工具可接受），或找上游 ar 补丁
+1. **缓存修复已推 main**（`039c5e4`）：只缓存 `lede/dl` + key 加 `-v2-`，旧毒缓存（含 staging_dir）永久失效。
+   旧配置的 Run 76 正在验证（2.40 冷编译）。
+2. **全功能合并已完成**：`backup-main-fullfeature` 已并入 main —— dockerman、1G 镜像、
+   `/opt` 数据分区、iStore 全套修复、OpenSSH 默认；binutils 改回 **2.42 默认**（同 Run 66 成功配置）。
+   合并后的首次构建 = 最终全功能固件验证。
+3. 若 2.42 冷编译仍崩（libgcc stack smash）：给 binutils TARGET_CFLAGS 加 `-fno-stack-protector`（构建工具可接受），或找上游 ar 补丁
 4. 若 1G 镜像装不下全部包（镜像生成阶段失败）：调大 `CONFIG_TARGET_ROOTFS_PARTSIZE` 至 1.5~2G
