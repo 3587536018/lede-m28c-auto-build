@@ -1,13 +1,13 @@
 # MangoPi M28C LEDE 自动构建
 
-[![Build and Release](https://github.com/zzzz0317/lede-m28c-auto-build/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/zzzz0317/lede-m28c-auto-build/actions/workflows/build.yml)
+[![Build and Release](https://github.com/3587536018/lede-m28c-auto-build/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/3587536018/lede-m28c-auto-build/actions/workflows/build.yml)
 
 删除了大部分无用的软件包，修改了主题
 
 ## 说明
 
 1. 第一次使用建议通过 [balenaEtcher](https://etcher.balena.io/) 直接刷入 TF 卡
-2. [Actions](https://github.com/zzzz0317/lede-m28c-auto-build/blob/main/.github/workflows/build.yml) 在北京时间每周五凌晨2点自动拉取 [LEDE](https://github.com/coolsnowwolf/lede) 代码编译并发布，平时可能会不定期手动触发更新
+2. [Actions](https://github.com/3587536018/lede-m28c-auto-build/blob/main/.github/workflows/build.yml) 在北京时间每周五凌晨2点自动拉取 [LEDE](https://github.com/coolsnowwolf/lede) 代码编译并发布，平时可能会不定期手动触发更新
 3. 默认 Wi-Fi SSID: `BRONYA`，密码: `3587536018`
 4. 默认 LAN 接口地址: `192.168.1.1`
 5. **root 无默认密码**（首次登录请自行设置）
