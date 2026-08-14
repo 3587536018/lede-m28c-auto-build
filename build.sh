@@ -13,6 +13,11 @@ echo "Update feeds"
 echo "Install feeds"
 ./scripts/feeds install -a || { echo "install feeds failed"; exit 1; }
 
+# iStore 官方集成方式 (linkease/istore README): 只安装 luci-app-store 并标记为默认包
+# is-opkg 运行时自动生成 meta/compat 源, 无需手动 istore-meta.conf
+./scripts/feeds install -d y -p istore luci-app-store || { echo "install istore failed"; exit 1; }
+echo "istore installed (official method)"
+
 # 移除未启用的 luci-app-passwall(其依赖 ipt2socks/hysteria 等不在本构建树,
 # 保留会触发 "has a dependency on ... which does not exist" WARNING, 污染日志)
 rm -rf package/feeds/luci/luci-app-passwall feeds/luci/applications/luci-app-passwall 2>/dev/null
