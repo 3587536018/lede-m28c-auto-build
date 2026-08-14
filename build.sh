@@ -1,4 +1,4 @@
-﻿#!/bin/bash -x
+#!/bin/bash -x
 
 # 妫€鏌?lede 鐩綍鏄惁瀛樺湪
 if [ ! -d "lede" ]; then

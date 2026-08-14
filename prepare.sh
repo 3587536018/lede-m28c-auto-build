@@ -1,4 +1,4 @@
-﻿#!/bin/bash -x
+#!/bin/bash -x
 id
 df -h
 free -h
