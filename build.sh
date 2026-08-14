@@ -128,43 +128,6 @@ PYEOF
 echo "=== Disk before make ==="
 df -h
 
-# ===== 修复 iStore 中文界面 =====
-# luci-app-store 的 store.lua: vue_lang() 用 i18n.translate("istore_vue_lang") 判断前端语言,
-# 但 luci-app-store 只打包了 zh-tw.lmo(没有 zh-cn), 翻译不到 → 回退 "en" → iStore 前端英文。
-# 修复: 回退语言从 "en" 改为 "zh-cn"(zh-cn.json 语言文件已在 /www/luci-static/istore/i18n/)
-ISTORE_CTRL=$(find feeds/istore -path '*luci-app-store*' -name store.lua 2>/dev/null | head -1)
-if [ -n "$ISTORE_CTRL" ] && grep -q 'lang = "en"' "$ISTORE_CTRL"; then
-  sed -i 's/lang = "en"/lang = "zh-cn"/' "$ISTORE_CTRL"
-  echo "patched istore vue_lang fallback to zh-cn: $ISTORE_CTRL"
-else
-  echo "istore store.lua not found or already patched"
-fi
-
-# ===== iStore 中文语言包: 生成 store.zh-cn.lmo =====
-# luci-app-store 没有 po/ 目录, luci 菜单标题 _("iStore") 无 .lmo 翻译, 永远显示英文。
-# 1) 直接用 po2lmo(luci feed 自带源码) 编译生成 zh-cn lmo 放入固件
-# 2) sed 直改菜单标题为中文(保底, 即使 lmo 格式有问题也生效)
-if [ -n "$ISTORE_CTRL" ]; then
-  # 菜单标题直接中文化(保底)
-  sed -i 's/_("iStore"), 31)/"iStore 应用商店", 31)/' "$ISTORE_CTRL"
-  echo "patched istore menu title to Chinese"
-  # 生成 zh-cn.lmo(正规语言包方式)
-  PO2LMO_SRC=$(find feeds/luci -path '*tools/po2lmo.c' 2>/dev/null | head -1)
-  if [ -n "$PO2LMO_SRC" ]; then
-    gcc -o /tmp/po2lmo "$PO2LMO_SRC" -I "$(dirname "$PO2LMO_SRC")" 2>/dev/null || gcc -o /tmp/po2lmo "$PO2LMO_SRC" 2>/dev/null || true
-  fi
-  if [ -x /tmp/po2lmo ]; then
-    mkdir -p files/usr/lib/lua/luci/i18n
-    printf 'msgid "iStore"\nmsgstr "iStore 应用商店"\n' > /tmp/store.po
-    /tmp/po2lmo /tmp/store.po files/usr/lib/lua/luci/i18n/store.zh-cn.lmo 2>/dev/null \
-      || /tmp/po2lmo /tmp/store.po > files/usr/lib/lua/luci/i18n/store.zh-cn.lmo 2>/dev/null \
-      || true
-    [ -s files/usr/lib/lua/luci/i18n/store.zh-cn.lmo ] && echo "generated istore zh-cn lmo" || echo "lmo generation failed (menu sed fallback already applied)"
-  else
-    echo "po2lmo compile failed (menu sed fallback already applied)"
-  fi
-fi
-
 echo "Download dependencies (with retries)"
 retry=3
 while [ $retry -gt 0 ]; do
