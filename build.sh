@@ -123,7 +123,7 @@ fi
 for filesystem in ext4 squashfs; do
     image="$image_dir/$image_base-$filesystem-sysupgrade.img.gz"
     test -s "$image"
-    gzip -t "$image"
+    python3 "$ROOT_DIR/scripts/verify-firmware.py" "$image"
     echo "Image OK: $image"
 done
 python3 "$ROOT_DIR/scripts/prepare-sources.py" --root "$ROOT_DIR" \

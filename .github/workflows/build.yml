@@ -20,7 +20,7 @@ on:
 
 concurrency:
   group: firmware-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.ref == 'refs/heads/codex/m28c-public-custom' }}
 
 permissions:
   contents: read
@@ -93,7 +93,7 @@ jobs:
           cp "$target"/{config.buildinfo,feeds.buildinfo,version.buildinfo,profiles.json} release_assets/
           cp sources.lock.json release_assets/
           git rev-parse HEAD > release_assets/customization.commit
-          gzip -t release_assets/*.img.gz
+          python3 scripts/verify-firmware.py release_assets/*.img.gz
           python3 scripts/prepare-sources.py --verify-manifest "$target"/openwrt-rockchip-armv8-widora_mangopi-m28c.manifest
           python3 - "$target"/openwrt-rockchip-armv8-widora_mangopi-m28c.manifest <<'PY'
           import json

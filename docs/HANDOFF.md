@@ -1,6 +1,6 @@
 # M28C 定制固件维护交接
 
-更新：2026-10-15。以当前代码、锁文件和实际构建结果为准。
+更新：2026-10-16。以当前代码、锁文件和实际构建结果为准。
 
 ## 架构
 
@@ -18,6 +18,7 @@
 - `package/luci-app-m28c`：基于 LuCI RPC 的中文首页和响应式样式。
 - `scripts/customize-ui.py`：iStore 控制器的严格、幂等语言补丁。现机 iStore 标签已显示中文，补丁解决新安装/翻译资源缺失时的英文回退。
 - `scripts/customize-qmodem.py` 与 `patches/qmodem/`：固定物理 USB 接口身份、槽位变更后复用 UCI 段，以及拨号/监控进程重新绑定。完整说明见 `docs/QMODEM-USB-REBIND.md`。升级 QModem 时补丁哈希不匹配会停止构建。
+- `scripts/verify-firmware.py`：只读检查 gzip 压缩数据与 fwtool 升级元数据的完整性、CRC 和目标设备；构建和最终下载验收使用同一校验器。
 - `.github/workflows/build.yml`：Ubuntu22.04、下载缓存、固件及失败日志 artifact、唯一Release标签。
 
 ## 默认访问
@@ -29,5 +30,7 @@
 项目本地是 Windows，完整交叉编译通过 GitHub Actions。修改后先运行 Python 单元测试、存储 mock、Shell语法检查。UI预览 `tests/ui-preview.html` 只使用明确标记的模拟数据；不能替代真固件验收。
 
 手动构建默认只生成 artifact，定制开发分支不发布。main 定时/推送构建和显式 publish 的main手动构建成功后才创建独立Release。源下载缓存可复用，staging_dir/build_dir 不跨 runner 缓存。
+
+构建 #101 已生成两种镜像，但普通 `gzip -t` 把 OpenWrt 在 gzip 后附加的 fwtool 升级元数据判为尾部垃圾并返回 2。必须使用元数据感知校验器，不能删除元数据或忽略所有 gzip 错误。定制开发分支推送新修复时会取消过时构建，其他分支的并发策略不变。
 
 完整源码或feeds版本升级后，应重新检查Modem/Wi-Fi驱动、LuCI包名、iStore控制器、必需包manifest和ext4/squashfs启动。真实设备刷写需要独立明确指令；检查设备不等于刷写授权。
