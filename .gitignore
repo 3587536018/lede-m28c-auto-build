@@ -1,1 +1,7 @@
-lede
+lede/
+.cache/
+artifacts/
+release_assets/
+__pycache__/
+*.pyc
+build-diagnostics/

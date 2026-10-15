@@ -1,183 +1,32 @@
-# LEDE M28C 固件项目 —— 交接与使用文档
+# M28C 定制固件维护交接
 
-> 最后更新：2026-08-14
-> 适用对象：接手本项目的其他 agent / 开发者
+更新：2026-10-15。以当前代码、锁文件和实际构建结果为准。
 
----
+## 架构
 
-## 1. 项目概况
+`prepare.sh` → `scripts/prepare-sources.py` 获取 `sources.lock.json` 中固定的 LEDE/feeds；`build.sh` 安装 feeds，复制 `package/*`，运行公开默认设置与 iStore 补丁，导入 `m28c.config`，校验必需包并编译。
 
-| 项 | 值 |
-|---|---|
-| 仓库 | `https://github.com/3587536018/lede-m28c-auto-build` |
-| 本地路径 | `C:\Users\wuming\Desktop\md\lede-m28c-auto-build` |
-| 用途 | 为 MangoPi M28C（RK3528 / armv8 / aarch64）自动编译定制 LEDE 固件（GitHub Actions） |
-| 源码 | `coolsnowwolf/lede`（master，内核 6.12，luci openwrt-25.12，gcc 13.3.0，musl） |
-| 设备 | M28C，TF 卡 58GB，LAN `192.168.1.1`，SSH `root` / 密码 `wuming` |
-| 成功产物 | release `v0.260814.054429`（Run 66，ext4+squashfs，但为旧功能集） |
+源码基线来自现有 Release v0.260815.012002 在 2026-08-28 更新的资产，不能从旧标签日期判断版本。LEDE 为 `8e247d214f071ef0cb3a31c879d4daf224849d3e`，Linux 6.12.104。此前失败的 #100 使用流动 master / Linux 6.18.55，失败点是 `fibocom_QMI_WWAN` 的 `hrtimer_init`。
 
----
+## 维护入口
 
-## 2. 分支结构
+- `m28c.config`：成功发布的精简 config.buildinfo 加上实机通用软件。
+- `configs/required-packages.txt`：必须在 defconfig 和最终 manifest 中存在的软件，防止静默漏包。
+- `scripts/customize-public.py`：删除共享工厂密码注入、不兼容旧 LuCI 源及禁用签名验证的命令，关闭新生成的无线接口。
+- `files/etc/uci-defaults/zzzz-custom`：通用语言、主机名、CPU、QModem 自动检测、服务默认状态。不能加入实机账号和订阅。
+- `files/etc/uci-defaults/99-expand-data`：幂等存储初始化，仅对明确新建分区格式化，挂载确认后配置 Docker/swap。
+- `package/luci-app-m28c`：基于 LuCI RPC 的中文首页和响应式样式。
+- `scripts/customize-ui.py`：iStore 控制器的严格、幂等语言补丁。现机 iStore 标签已显示中文，补丁解决新安装/翻译资源缺失时的英文回退。
+- `.github/workflows/build.yml`：Ubuntu22.04、下载缓存、固件及失败日志 artifact、唯一Release标签。
 
-```
-main = 全功能合并版（基于 Run 66 成功配置 16be226）：
-       dockerman + 1G 镜像 + /opt 数据分区 + iStore 全套修复 + OpenSSH 默认
-       + 缓存修复（只缓存 dl，key -v2-）+ binutils 2.42 默认
-backup-main-fullfeature (0e8a94a)
-       = 全功能修改原始分支（已合并进 main，保留备份）
-backup-before-reset
-       = 早期 2.40+宏+22.04 折腾史（可忽略）
-```
+## 默认访问
 
----
+新固件 LAN 为 192.168.1.1，root 无预设密码，必须先通过有线 LuCI 设置密码，再使用 SSH。Wi-Fi 初始禁用；镜像中不得硬编码 Wi-Fi 密钥。已有用户密码不在首次启动时清空。
 
-## 3. 构建系统（GitHub Actions）
+## 构建/验证注意
 
-### 3.1 最终有效配置
+项目本地是 Windows，完整交叉编译通过 GitHub Actions。修改后先运行 Python 单元测试、存储 mock、Shell语法检查。UI预览 `tests/ui-preview.html` 只使用明确标记的模拟数据；不能替代真固件验收。
 
-- `runs-on: ubuntu-22.04`（与官方 LEDE CI 一致）
-- 磁盘清理：官方 apt purge 风格（**禁用 easimon**，会破坏 runner 环境）
-- swap：完全容错脚本（22.04 镜像自带 immutable `/swapfile`）
-- cache key：**必须含 `-22.04-` 标识**（staging_dir 与 glibc 版本强绑定）
-- 发布：softprops/action-gh-release（API 创建 tag，避免 workflow 文件保护问题）
+手动构建默认只生成 artifact，定制开发分支不发布。main 定时/推送构建和显式 publish 的main手动构建成功后才创建独立Release。源下载缓存可复用，staging_dir/build_dir 不跨 runner 缓存。
 
-### 3.2 两大编译障碍与解法
-
-| 障碍 | 根因 | 解法 |
-|---|---|---|
-| readelf.c `off64_t` 未定义 | binutils 编译混入 musl 头；**runner 镜像批次会变**（同配置 Run 66 成功 / 70 失败） | build.sh 内 Python 幂等 patch：`HOST_CFLAGS += -D_LARGEFILE64_SOURCE` + `TARGET_CFLAGS += ...`（必须对称，否则 ar configure/编译不一致） |
-| aarch64 cross ar 打包 libgcc.a `stack smashing` | 缓存恢复的旧 ar 所致：缓存只含 staging_dir 不含 build_dir，工具链半成品恢复后 binutils 被跳过，仍用旧 ar；**Run 66 冷编译 2.42 成功，非 2.42 缺陷** | 缓存只留 dl（key `-v2-`），工具链每次冷编译（见 3.3） |
-
-### 3.3 binutils 版本策略（当前：2.42 默认）
-
-无 DEVEL 时 binutils choice 不可见，`BINUTILS_VERSION_2_42` 有
-`default y if !TOOLCHAINOPTS`，defconfig 会强制 2.42。
-`# CONFIG_BINUTILS_VERSION_2_42 is not set` 对此**无效**。
-
-当前 `m28c.config` 声明（defconfig 后实际生效为 2.42，build.sh 只打印不强制）：
-
-```
-CONFIG_BINUTILS_VERSION_2_42=y
-CONFIG_BINUTILS_VERSION="2.42"
-```
-
-### 3.4 环境安装
-
-`install-env.sh`：apt 源自适应 codename（jammy/noble）、full-upgrade、
-清第三方源、官方包列表（含 `libncurses5-dev libncursesw5-dev`、llvm 等）。
-
-### 3.5 build.sh 内嵌 patch 清单
-
-1. qmodem：删除不存在依赖（kmod-mhi-wwan* / quectel-CM-5G），
-   直接 patch `feeds/qmodem` 源目录（package/feeds 下是 symlink）
-2. iStore：vue_lang 回退 zh-cn；菜单中文化；生成 zh-cn.lmo
-3. binutils：对称宏 patch（见 3.2）
-4. defconfig 后验证：设备存在 + binutils 2.40
-5. 失败时自动推送诊断到 `debug-env` 分支（debug-build.log）
-
----
-
-## 4. 功能定制清单
-
-| # | 功能 | 状态 | 细节 |
-|---|---|---|---|
-| 1 | 全中文界面 | ✅ | LUCI 强制 zh_cn + 各插件中文包 |
-| 2 | QModem 新版界面 + 短信 + 监控 | ✅ | luci-app-qmodem-next / qmodem-monitor / sms-forwarder-next |
-| 3 | 科学上网 | ✅ | OpenClash（SSR-Plus 需 helloworld feed，当前未加入，配置已清理） |
-| 4 | Docker | ✅ | dockerd + docker-compose + luci-app-docker（顶层菜单） |
-| 5 | dockerman + 中文 | ✅(backup) | luci-app-dockerman + luci-i18n-dockerman-zh-cn |
-| 6 | iStore | ✅ | 见第 5 节 |
-| 7 | 镜像 1G | ✅(main) | `CONFIG_TARGET_ROOTFS_PARTSIZE=1024` |
-| 8 | 存储扩容 | ✅(backup) | rootfs 1G 不扩 + p3 吃满剩余挂 `/opt` |
-| 9 | OpenSSH 默认 | ✅(backup) | 移除 dropbear，sshd 接管 22 端口 |
-| 10 | 网络服务 | ✅ | AdGuard、ddns-go、TurboACC(BBR+FlowOffload)、UPnP、samba4、rclone、vlmcsd、WOL、nlbwmon、ttyd、arpbind |
-| 11 | 系统管理 | ✅ | Argon 主题、diskman、cpufreq、cpulimit、autoreboot、watchcat、filetransfer、mtr/iperf3/nload |
-
----
-
-## 5. iStore 修复（4 项，均在 backup 分支）
-
-| 问题 | 根因 | 修复 |
-|---|---|---|
-| 前端英文 | 无 zh-cn.lmo → 回退 en | store.lua `lang = "en"` → `"zh-cn"` |
-| 菜单 "iStore" 英文 | 无 luci .po | 菜单改 "iStore 应用商店" + po2lmo 生成 `files/usr/lib/lua/luci/i18n/store.zh-cn.lmo` |
-| 应用装不了（Unknown package app-meta-xxx） | 缺 meta feed | `files/etc/opkg/istore-meta.conf`：`src/gz is_meta https://istore.istoreos.com/repo/all/meta`（134 个 meta 包） |
-| compat 兼容 feed | 正常镜像有，下载失败无碍 | 暂未加（避免覆盖系统包） |
-
-设备临时修复（不等新固件）：
-```sh
-echo "src/gz is_meta https://istore.istoreos.com/repo/all/meta" >> /etc/opkg/istore-meta.conf
-```
-
----
-
-## 6. 存储扩容方案（99-expand-data）
-
-```
-磁盘布局:
-┌─────────┬──────────────────────────────┐
-│ rootfs  │  p3 数据分区 (挂载 /opt)     │
-│ 1G      │  剩余全部 ~57G               │
-└─────────┴──────────────────────────────┘
-```
-
-- 首次启动：创建 p3（1.2GiB 起）→ mkfs.ext4 → fstab UUID 挂 `/opt`
-- docker data_root = `/opt/docker`；swap = `/opt/swapfile`（512M）
-- 老固件升级：/opt 已有内容先迁移到 p3 再挂载
-- 根分区为何不扩：LEDE ext4 镜像 resize2fs 上限约 6G（reserve_backup_gdb），
-  squashfs 只读——所以用数据分区方案绕开
-
----
-
-## 7. 构建与发布流程
-
-1. `git push` 到 main → 自动触发 build（paths-ignore：README/docs）
-2. build 成功 → release job 用 softprops 发布（tag 格式 `v0.YYMMDD.HHMMSS`）
-3. 产物：`openwrt-rockchip-armv8-widora_mangopi-m28c-{ext4,squashfs}-sysupgrade.img.gz`
-4. 下载地址：仓库 Releases 页
-
-刷机：TF 卡写 img（balenaEtcher / dd），插卡上电，等首次启动脚本执行完成
-（扩容格式化约 1-2 分钟），登录 `192.168.1.1`（root / wuming）。
-
----
-
-## 8. 运维速查
-
-```powershell
-# 查构建状态（匿名 API）
-python -c "import urllib.request,json; d=json.load(urllib.request.urlopen(urllib.request.Request('https://api.github.com/repos/3587536018/lede-m28c-auto-build/actions/runs?per_page=5',headers={'User-Agent':'Mozilla/5.0'}))); [print(r['run_number'],r['conclusion'],r['created_at'][11:19],r['head_sha'][:8]) for r in d['workflow_runs']]"
-
-# 诊断日志（build.sh 自动推送 debug-env 分支）
-# https://raw.githubusercontent.com/3587536018/lede-m28c-auto-build/debug-env/debug-build.log
-
-# 设备
-ssh root@192.168.1.1      # 密码 wuming
-```
-
----
-
-## 9. 坑与教训（接手必读）
-
-1. **官方 LEDE CI 只验证 x86**——aarch64 的 binutils ar / off64_t 全部要自己兜底
-2. **runner 镜像是快速移动目标**——"同配置一次成功一次失败"先怀疑镜像批次与缓存
-3. **cache 与 glibc 版本绑定**——staging_dir 跨系统命中会污染（GLIBC_2.38 not found）
-4. GitHub cache 7 天未访问即驱逐；失败 run 不保存；取消 run 的 post 可能存下不完整缓存
-5. Kconfig：`prompt "x" if COND` 条件假时选项不可见；`default y if !TOOLCHAINOPTS` 优先于显式 `# is not set`
-6. feeds install 的 package/feeds 是 symlink，find/sed patch 要走 feeds 源目录
-7. 22.04 runner 自带 immutable /swapfile（chattr +i），swap 操作先容错
-8. easimon/maximize-build-space 在新镜像布局下会破坏环境，用官方 apt purge 清理
-9. LEDE master 当前最新 `8882f211bb`（08-12）；构建系统文件 7 月底以来零变化
-10. PowerShell 下 git push 报 NativeCommandError（exit 1）是 stderr 误报，看 `xxxx..xxxx main -> main` 即成功
-
----
-
-## 10. 当前状态与下一步
-
-1. **缓存修复已推 main**（`039c5e4`）：只缓存 `lede/dl` + key 加 `-v2-`，旧毒缓存（含 staging_dir）永久失效。
-   旧配置的 Run 76 正在验证（2.40 冷编译）。
-2. **全功能合并已完成**：`backup-main-fullfeature` 已并入 main —— dockerman、1G 镜像、
-   `/opt` 数据分区、iStore 全套修复、OpenSSH 默认；binutils 改回 **2.42 默认**（同 Run 66 成功配置）。
-   合并后的首次构建 = 最终全功能固件验证。
-3. 若 2.42 冷编译仍崩（libgcc stack smash）：给 binutils TARGET_CFLAGS 加 `-fno-stack-protector`（构建工具可接受），或找上游 ar 补丁
-4. 若 1G 镜像装不下全部包（镜像生成阶段失败）：调大 `CONFIG_TARGET_ROOTFS_PARTSIZE` 至 1.5~2G
+完整源码或feeds版本升级后，应重新检查Modem/Wi-Fi驱动、LuCI包名、iStore控制器、必需包manifest和ext4/squashfs启动。真实设备刷写需要独立明确指令；检查设备不等于刷写授权。

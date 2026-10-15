@@ -4,201 +4,189 @@ on:
   schedule:
     - cron: '0 18 * * 4'
   workflow_dispatch:
-    # inputs:
-    #   tag_name:
-    #     description: 'Tag name (e.g., v1.0.0)'
-    #     required: true
+    inputs:
+      publish:
+        description: 'Publish a public release (main branch only)'
+        type: boolean
+        default: false
   push:
     branches:
       - main
-    tags:
-      - .*
+      - codex/m28c-public-custom
+    paths-ignore:
+      - 'docs/**'
+      - 'screenshot/**'
+      - '*.md'
+
+concurrency:
+  group: firmware-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
 
 jobs:
   build:
-    # ubuntu-22.04: 官方 LEDE CI 验证环境(glibc 2.35)。
-    # 24.04(glibc 2.39) 上 binutils 2.4x 的 readelf.c 编译时混入 musl 头 → off64_t 错误。
-    # 教训(Run 66 vs 70-74): 缓存 staging_dir 但不缓存 build_dir 会恢复出"半成品工具链",
-    # binutils 重编时混入缓存里的 musl 头 → off64_t; binutils 被跳过时用缓存旧 ar 打包
-    # libgcc → stack smashing。冷编译(Run 66)可成功, 因此工具链必须每次全量冷编译。
     runs-on: ubuntu-22.04
-    permissions:
-      contents: write
+    timeout-minutes: 360
     steps:
-      - name: Check build space
+      - uses: actions/checkout@v4
+      - name: Validate customization
         run: |
-          df -h
-          lsblk
-          free -h
-      - name: Cleanup environment (official LEDE CI style)
-        # 不用 easimon/maximize-build-space: 它会移动/删除文件破坏 runner 环境
-        # (官方 issue: GitHub runner disk layout is a fast moving target, breaking this action)
-        # 照抄官方 LEDE CI 的 apt purge 清理方式
+          python3 -m pip install --disable-pip-version-check 'lupa==2.8'
+          python3 -m unittest discover -s tests -p 'test_*.py' -v
+          bash tests/expand-data-test.sh
+          bash -n build.sh
+          bash -n prepare.sh
+          sh -n install-env.sh
+          sh -n files/etc/uci-defaults/zzzz-custom
+          sh -n files/etc/uci-defaults/99-expand-data
+      - name: Free runner disk space
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
-          sudo -E rm -rf /usr/share/dotnet /etc/mysql /etc/php /usr/local/lib/android /opt/hostedtoolcache /usr/local/share/powershell 2>/dev/null || true
-          sudo -E apt-mark hold grub-efi-amd64-signed 2>/dev/null || true
-          sudo -E apt update || true
-          sudo -E apt -y purge azure-cli* docker* ghc* zulu* llvm* firefox google* dotnet* powershell* openjdk* mysql* php* mongodb* snap* 2>/dev/null || true
-          sudo -E apt -y autoremove --purge 2>/dev/null || true
-          sudo -E apt clean || true
-      - name: Enable swap (4096MB, 防 OOM)
-        # 22.04 镜像自带 immutable 的 /swapfile; 全程容错, swap 失败不阻断构建
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/hostedtoolcache /usr/local/share/powershell
+          sudo apt-mark hold grub-efi-amd64-signed || true
+          sudo apt-get purge -y 'azure-cli*' 'ghc*' 'zulu*' 'llvm*' 'firefox*' 'google*' 'dotnet*' 'powershell*' 'openjdk*' 'mysql*' 'php*' 'mongodb*' 'snap*' || true
+          sudo apt-get autoremove -y --purge || true
+          sudo apt-get clean
+          df -h
+      - name: Enable build swap
         run: |
-          if sudo swapon --show | grep -q /swapfile; then
-            echo "swap already active"
-          else
+          if ! sudo swapon --show | grep -q /swapfile; then
             sudo chattr -i /swapfile 2>/dev/null || true
             sudo rm -f /swapfile 2>/dev/null || true
-            sudo fallocate -l 4096M /swapfile 2>/dev/null || sudo dd if=/dev/zero of=/swapfile bs=1M count=4096 2>/dev/null || true
-            sudo chmod 600 /swapfile 2>/dev/null || true
-            sudo mkswap /swapfile 2>/dev/null || true
-            sudo swapon /swapfile 2>/dev/null || true
+            sudo fallocate -l 4096M /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=4096
+            sudo chmod 600 /swapfile
+            sudo mkswap /swapfile
+            sudo swapon /swapfile
           fi
           free -h
-      - name: Check build space after cleanup
-        run: |
-          df -h
-          lsblk
-          free -h
-      - name: Checkout code
-        uses: actions/checkout@v4
-      - name: Setup environment
-        shell: bash
+      - name: Install build dependencies
         run: |
           set -o pipefail
-          if ! sudo ./install-env.sh 2>&1 | tee /tmp/envsetup.log; then
-            EXIT=${PIPESTATUS[0]}
-            echo "=== env setup failed (exit $EXIT), pushing diagnostics to debug-env branch ==="
-            git config user.email "build-bot@users.noreply.github.com"
-            git config user.name "build-bot"
-            git checkout -B debug-env
-            cp /tmp/envsetup.log debug-env.log
-            git add debug-env.log
-            git commit -m "debug: environment setup failure log" || true
-            git push -f origin debug-env || true
-            exit $EXIT
-          fi
-      - name: Prepare
+          sudo ./install-env.sh 2>&1 | tee /tmp/envsetup.log
+      - name: Prepare locked sources
         run: |
-          ./prepare.sh
-      - name: Cache OpenWrt dl (sources only)
-        uses: actions/cache@v3
-        if: always()
+          set -o pipefail
+          ./prepare.sh 2>&1 | tee /tmp/prepare.log
+      - name: Cache source downloads
+        id: dl-cache
+        uses: actions/cache/restore@v4
         with:
-          # 只缓存 lede/dl(源码下载): staging_dir 里的 host 工具与 runner 镜像绑定,
-          # 且缓存不含 build_dir 会导致工具链半成品恢复(Run 70-74 全部因此失败)。
-          # 工具链每次冷编译(同 Run 66), 这是官方 LEDE CI 的做法。
-          path: |
-            lede/dl
-          key: ${{ runner.os }}-22.04-openwrt-v2-${{ hashFiles('lede/feeds.conf.default', 'm28c.config') }}
-          # -v2- 版本标记: 使 8/13 之前带 staging_dir 的旧缓存永久失效
-          # (restore-key 前缀匹配会把旧毒缓存恢复出来, 仅改路径不够)
+          path: lede/dl
+          key: ${{ runner.os }}-22.04-m28c-dl-v3-${{ hashFiles('sources.lock.json', 'm28c.config', 'package/**/Makefile') }}
           restore-keys: |
-            ${{ runner.os }}-22.04-openwrt-v2-
-      - name: Build
-        shell: bash
+            ${{ runner.os }}-22.04-m28c-dl-v3-
+      - name: Build firmware
         run: |
           set -o pipefail
-          if ! ./build.sh 2>&1 | tee /tmp/buildall.log; then
-            EXIT=${PIPESTATUS[0]}
-            echo "=== build failed (exit $EXIT), pushing diagnostics to debug-env branch ==="
-            git config user.email "build-bot@users.noreply.github.com"
-            git config user.name "build-bot"
-            git checkout -B debug-env
-            cp /tmp/buildfail.log debug-build.log 2>/dev/null || tail -100 /tmp/buildall.log > debug-build.log
-            git add debug-build.log
-            git commit -m "debug: build failure log" || true
-            git push -f origin debug-env || true
-            exit $EXIT
-          fi
-      - name: Prepare release assets
+          ./build.sh 2>&1 | tee /tmp/buildall.log
+      - name: Prepare verified firmware assets
         run: |
+          set -euo pipefail
           mkdir -p release_assets
-          # 关键产物(.img.gz 固件 / manifest)缺失时必须失败，避免"假成功"发布空 release
-          cp lede/bin/targets/rockchip/armv8/*.img.gz release_assets/
-          cp lede/bin/targets/rockchip/armv8/openwrt-rockchip-armv8-widora_mangopi-m28c.manifest release_assets/
-          cp lede/bin/targets/rockchip/armv8/config.buildinfo release_assets/ || true
-          cp lede/bin/targets/rockchip/armv8/feeds.buildinfo release_assets/ || true
-          cp lede/bin/targets/rockchip/armv8/profiles.json release_assets/ || true
-          cp lede/bin/targets/rockchip/armv8/version.buildinfo release_assets/ || true
-          cp lede/bin/targets/rockchip/armv8/sha256sums release_assets/ || true
-          ls -la release_assets
-      - name: Upload artifacts
+          target=lede/bin/targets/rockchip/armv8
+          cp "$target"/*widora_mangopi-m28c*ext4*.img.gz release_assets/
+          cp "$target"/*widora_mangopi-m28c*squashfs*.img.gz release_assets/
+          cp "$target"/openwrt-rockchip-armv8-widora_mangopi-m28c.manifest release_assets/
+          cp "$target"/{config.buildinfo,feeds.buildinfo,version.buildinfo,profiles.json} release_assets/
+          cp sources.lock.json release_assets/
+          git rev-parse HEAD > release_assets/customization.commit
+          gzip -t release_assets/*.img.gz
+          python3 scripts/prepare-sources.py --verify-manifest "$target"/openwrt-rockchip-armv8-widora_mangopi-m28c.manifest
+          python3 - "$target"/openwrt-rockchip-armv8-widora_mangopi-m28c.manifest <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+          lock = json.loads(Path('sources.lock.json').read_text())
+          expected = lock['baseline']['kernel']
+          manifest = Path(sys.argv[1]).read_text().splitlines()
+          if not any(line.startswith(f'kernel - {expected}-') for line in manifest):
+              raise SystemExit(f'Kernel differs from the pinned baseline: expected {expected}')
+          print(f'Verified kernel {expected}')
+          PY
+          cd release_assets
+          sha256sum *.img.gz > sha256sums
+      - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
-          name: build-artifacts
+          name: m28c-public-firmware-${{ github.run_number }}
           path: release_assets/
-      - name: Calculate disk usage
+          if-no-files-found: error
+          retention-days: 14
+      - name: Check downloaded sources for caching
+        id: downloaded-sources
+        if: always() && steps.dl-cache.outputs.cache-hit != 'true' && steps.dl-cache.outputs.cache-primary-key != ''
+        run: |
+          if [ -d lede/dl ] && [ -n "$(find lede/dl -type f -print -quit)" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Save downloaded sources even after a build failure
+        if: always() && steps.downloaded-sources.outputs.available == 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: lede/dl
+          key: ${{ steps.dl-cache.outputs.cache-primary-key }}
+      - name: Collect diagnostics
         if: always()
         run: |
-          df -h
-          lsblk
-          du -h --max-depth=2
+          mkdir -p build-diagnostics
+          for file in /tmp/envsetup.log /tmp/prepare.log /tmp/buildall.log /tmp/build.log /tmp/buildfail.log /tmp/tmpinfo.log; do
+            [ ! -f "$file" ] || cp "$file" build-diagnostics/
+          done
+          [ ! -f lede/.config ] || cp lede/.config build-diagnostics/generated.config
+          cp sources.lock.json build-diagnostics/
+          df -h > build-diagnostics/disk.txt
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m28c-build-diagnostics-${{ github.run_number }}
+          path: build-diagnostics/
+          retention-days: 14
+
   release:
     needs: build
+    if: github.ref == 'refs/heads/main' && (github.event_name != 'workflow_dispatch' || inputs.publish)
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
         with:
-          fetch-depth: 0
-      - name: Download artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: build-artifacts
+          name: m28c-public-firmware-${{ github.run_number }}
           path: release_assets/
-      - name: List files
+      - name: Set unique release identity
+        id: release
         run: |
-          ls -lah
-          ls -lah release_assets
-      - name: Get current date and time for release info
-        id: release-prepare
-        run: |
-          current_date=$(TZ=Asia/Shanghai date +'%y%m%d')
-          current_time=$(TZ=Asia/Shanghai date +'%H%M%S')
-          echo "current_date=${current_date}" >> $GITHUB_OUTPUT
-          echo "current_time=${current_time}" >> $GITHUB_OUTPUT
-          RELEASE_DATE=$(TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M:%S')
-          VERSION=$(cat release_assets/version.buildinfo | grep '^r' | head -n 1)
-          echo "RELEASE_TITLE=${RELEASE_DATE} - ${VERSION}" >> $GITHUB_OUTPUT
-      - name: Check for changes since last tag
-        id: check-changes
-        run: |
-          latest_tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-          if [ -z "$latest_tag" ]; then
-            echo "needs_new_tag=true" >> $GITHUB_OUTPUT
-            echo "new_tag=v0.${{ steps.release-prepare.outputs.current_date }}.${{ steps.release-prepare.outputs.current_time }}" >> $GITHUB_OUTPUT
-          else
-            has_changes=$(git diff --quiet $latest_tag HEAD || echo "true")
-            if [ -n "$has_changes" ]; then
-              echo "needs_new_tag=true" >> $GITHUB_OUTPUT
-              echo "new_tag=v0.${{ steps.release-prepare.outputs.current_date }}.${{ steps.release-prepare.outputs.current_time }}" >> $GITHUB_OUTPUT
-            else
-              echo "needs_new_tag=false" >> $GITHUB_OUTPUT
-              echo "new_tag=$latest_tag" >> $GITHUB_OUTPUT
-            fi
-          fi
-      - name: Create new tag if needed
-        if: steps.check-changes.outputs.needs_new_tag == 'true'
-        run: |
-          git tag ${{ steps.check-changes.outputs.new_tag }}
-          git push origin ${{ steps.check-changes.outputs.new_tag }}
-      - name: Create release
+          stamp=$(TZ=Asia/Shanghai date +'%Y%m%d.%H%M%S')
+          version=$(cat release_assets/version.buildinfo)
+          echo "tag=m28c-${stamp}-${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+          echo "title=M28C 中文定制版 ${stamp} - ${version}" >> "$GITHUB_OUTPUT"
+          cat > release_assets/RELEASE.md <<'EOF'
+          MangoPi M28C 公开定制固件：中文控制台、iStore、QModem、OpenClash、Docker、Homebox。
+
+          首次通过网线访问 http://192.168.1.1，以 root 登录 LuCI 并设置密码，再配置 Wi-Fi。
+          固件不预置密码、Wi-Fi 密钥、代理订阅、DDNS 令牌或设备私钥。
+          OpenClash、文件共享和 FTP 需要自行配置并启用。
+
+          刷写整张 TF 卡会覆盖卡上的数据，请先备份。源码版本见 sources.lock.json，镜像校验见 sha256sums。
+          EOF
+      - name: Publish firmware
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.check-changes.outputs.new_tag }}
-          # tag_name: ${{ inputs.tag_name }}
-          name: ${{ steps.release-prepare.outputs.RELEASE_TITLE }}
-          body_path: release_assets/openwrt-rockchip-armv8-widora_mangopi-m28c.manifest
+          tag_name: ${{ steps.release.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: ${{ steps.release.outputs.title }}
+          body_path: release_assets/RELEASE.md
+          fail_on_unmatched_files: true
           files: |
             release_assets/*.img.gz
-            release_assets/openwrt-rockchip-armv8-widora_mangopi-m28c.manifest
-            release_assets/config.buildinfo
-            release_assets/feeds.buildinfo
+            release_assets/*.manifest
+            release_assets/*.buildinfo
             release_assets/profiles.json
-            release_assets/version.buildinfo
+            release_assets/sources.lock.json
+            release_assets/customization.commit
             release_assets/sha256sums

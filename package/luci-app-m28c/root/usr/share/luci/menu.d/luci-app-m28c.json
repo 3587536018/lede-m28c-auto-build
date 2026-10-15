@@ -1,0 +1,13 @@
+{
+  "admin/m28c": {
+    "title": "控制台",
+    "order": 1,
+    "action": {
+      "type": "view",
+      "path": "m28c/dashboard"
+    },
+    "depends": {
+      "acl": ["luci-app-m28c"]
+    }
+  }
+}

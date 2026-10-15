@@ -1,6 +1,18 @@
 #!/bin/sh
-# install-env.sh - LEDE 构建环境依赖安装 (Ubuntu 22.04/24.04 自适应)
-# v4: 包列表完全对齐官方 LEDE CI (openwrt-ci.yml), 增加 full-upgrade 和旧源清理
+# install-env.sh - LEDE 构建环境依赖安装 (Ubuntu 22.04)
+set -eu
+export DEBIAN_FRONTEND=noninteractive
+export NEEDRESTART_MODE=a
+
+if [ "$(id -u)" -ne 0 ]; then
+  echo "Run install-env.sh as root (sudo ./install-env.sh)" >&2
+  exit 1
+fi
+. /etc/os-release
+if [ "${ID:-}" != ubuntu ] || [ "${VERSION_CODENAME:-}" != jammy ]; then
+  echo "This locked toolchain is validated on Ubuntu 22.04 (jammy) only" >&2
+  exit 1
+fi
 
 # ---------- 0. 架构适配 ----------
 ARCH=$(uname -m)
@@ -19,13 +31,16 @@ fi
 
 # ---------- 1. 清理旧源 + 强制使用官方 Ubuntu 源 ----------
 # 官方 CI 会清空 sources.list.d 里 Microsoft 等第三方源(可能 GPG 过期污染 apt)
-sudo rm -rf /etc/apt/sources.list.d/* 2>/dev/null || true
-# 自适应 codename: 22.04=jammy / 24.04=noble
-CODENAME=$(lsb_release -cs 2>/dev/null || grep -oP '(?<=VERSION_CODENAME=)\w+' /etc/os-release | tr -d '"')
-[ -n "$CODENAME" ] || CODENAME=noble
+rm -f /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources
+CODENAME=$VERSION_CODENAME
+case "$ARCH" in
+  x86_64) UBUNTU_MIRROR=https://archive.ubuntu.com/ubuntu/ ;;
+  aarch64) UBUNTU_MIRROR=https://ports.ubuntu.com/ubuntu-ports/ ;;
+  *) echo "Unsupported build host architecture: $ARCH" >&2; exit 1 ;;
+esac
 cat > /etc/apt/sources.list.d/ubuntu-official.sources <<EOF
 Types: deb
-URIs: https://archive.ubuntu.com/ubuntu/
+URIs: $UBUNTU_MIRROR
 Suites: $CODENAME $CODENAME-updates $CODENAME-security
 Components: main universe
 Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
@@ -47,11 +62,8 @@ if [ $update_ok -eq 0 ]; then
   exit 1
 fi
 
-# ---------- 3. 官方 CI 同款 full-upgrade (更新到最新 jammy/noble, 减少版本差异) ----------
-echo "=== apt-get full-upgrade ==="
-apt-get -y full-upgrade 2>/dev/null || true
-
-# ---------- 4. apt-get install (失败重试 + 详细诊断) ----------
+# Keep the runner's tested base system; install only build dependencies.
+# ---------- 3. apt-get install (失败重试 + 详细诊断) ----------
 echo "=== apt-get install (attempt 1/2) ==="
 if ! apt-get install -y $PKGS; then
   echo "=== apt-get install failed, retrying after 10s ==="

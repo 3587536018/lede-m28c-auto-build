@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "baseline": {
+    "release_url": "https://github.com/3587536018/lede-m28c-auto-build/releases/tag/v0.260815.012002",
+    "release_title": "2026-08-28 12:41:08 - r7892-8e247d214",
+    "asset_created_at": "2026-08-28T04:41:10Z",
+    "version": "r7892-8e247d214",
+    "kernel": "6.12.104",
+    "qmodem": "3.2.0",
+    "evidence": ["version.buildinfo", "feeds.buildinfo", "openwrt-rockchip-armv8-widora_mangopi-m28c.manifest"],
+    "reason": "The release tag was reused. These revisions come from its August 28 assets, the latest successful image, rather than the original tag date. Pinning the complete baseline avoids the Linux 6.18 hrtimer_init driver failure in run 100."
+  },
+  "lede": {
+    "url": "https://github.com/coolsnowwolf/lede.git",
+    "revision": "8e247d214f071ef0cb3a31c879d4daf224849d3e"
+  },
+  "feeds": [
+    {"name": "packages", "url": "https://github.com/coolsnowwolf/packages", "revision": "bcc1adfa10c98e5183785d015e4d50ef98f04ab3"},
+    {"name": "luci", "url": "https://github.com/coolsnowwolf/luci.git", "revision": "9f2b84adca16c07a32c13cf27c1614331890cef3"},
+    {"name": "routing", "url": "https://github.com/coolsnowwolf/routing", "revision": "56d7a818b71b83b0051b85d38efa3b3b558adf75"},
+    {"name": "telephony", "url": "https://github.com/coolsnowwolf/telephony.git", "revision": "a04b7acfd30a6f8f4d78e62955376c4febcb0976"},
+    {"name": "qmodem", "url": "https://github.com/FUjr/QModem.git", "revision": "f5035b7d6d643666556e5c3fe7e765b3ebe79379"},
+    {"name": "istore", "url": "https://github.com/linkease/istore.git", "revision": "07573209abc9377a128c56a3f9322ebc8d9b7d31"},
+    {"name": "openclash", "url": "https://github.com/vernesong/OpenClash.git", "revision": "c3a33c1d3407956fdf8f0e0b7c1a4c52e6ad9593"}
+  ]
+}

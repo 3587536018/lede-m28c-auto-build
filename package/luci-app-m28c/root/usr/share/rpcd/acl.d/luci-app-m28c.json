@@ -1,0 +1,11 @@
+{
+  "luci-app-m28c": {
+    "description": "Read system and filesystem capacity for the M28C dashboard",
+    "read": {
+      "ubus": {
+        "system": ["board", "info"],
+        "luci": ["getMountPoints"]
+      }
+    }
+  }
+}

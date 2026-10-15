@@ -1,69 +1,50 @@
-# MangoPi M28C LEDE 自动构建
+# MangoPi M28C 中文定制固件
 
-[![Build and Release](https://github.com/3587536018/lede-m28c-auto-build/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/3587536018/lede-m28c-auto-build/actions/workflows/build.yml)
+为 MangoPi M28C（RK3528 / ARM64）构建公开 LEDE 固件。配置参考 2026-10-15 实机的软件清单，源码固定到最近成功发布的 Linux 6.12.104 / QModem 3.2.0 基线。
 
-删除了大部分无用的软件包，修改了主题
+## 定制内容
 
-## 说明
+- Argon 中文界面与新的 M28C 控制台：实时运行状态、存储容量、5G / 应用 / Docker / 文件共享 / 网络设置快捷入口，适配手机。
+- iStore 语言兼容补丁：显式加载翻译，统一 `zh_cn`、`zh-CN` 等语言格式，检查中文资源后再回退。
+- QModem、OpenClash、Docker / Compose / Dockerman、Homebox、DDNS / DDNS-Go、Samba、FTP、TurboACC、OpenSSH、常用诊断工具。
+- 1 GiB 根分区，ext4 与 squashfs 两种镜像；首次启动使用尾部空闲空间建立 `/opt`，或复用已有 `opt` / `optdata` 分区。
+- Docker 数据目录 `/opt/docker`，512 MiB swap 只在数据分区正确挂载后创建。
 
-1. 第一次使用建议通过 [balenaEtcher](https://etcher.balena.io/) 直接刷入 TF 卡
-2. [Actions](https://github.com/3587536018/lede-m28c-auto-build/blob/main/.github/workflows/build.yml) 在北京时间每周五凌晨2点自动拉取 [LEDE](https://github.com/coolsnowwolf/lede) 代码编译并发布，平时可能会不定期手动触发更新
-3. 默认 Wi-Fi SSID: `BRONYA`，密码: `3587536018`
-4. 默认 LAN 接口地址: `192.168.1.1`
-5. **root 无默认密码**（首次登录请自行设置）
-6. 默认四核全开（rc.local 已移除限核配置）
+## 首次使用
 
-## 截图
+1. 备份 TF 卡后，将 `*.img.gz` 解压并用 balenaEtcher 等工具写入 TF 卡。整卡刷写会覆盖卡上现有数据。
+2. 用网线连接，浏览器打开 `http://192.168.1.1`。用户名 `root`，固件没有预设密码，在 LuCI 中先设置管理密码。
+3. 设置自己的 Wi-Fi 名称、密码和地区，再启用无线。全新镜像的 Wi-Fi 默认关闭，SSH 不接受空密码。
+4. 在 QModem 中确认 modem；自行导入 OpenClash 订阅、DDNS 凭据，并配置共享目录后启用相应服务。
 
-主题是 [luci-theme-argon](https://github.com/jerrykuku/luci-theme-argon)
+固件不包含实机的密码、Wi-Fi 密钥、订阅、DDNS 令牌、SIM 标识、SSH 私钥或 `/opt` 运行数据。OpenClash、Samba、FTP、DDNS 默认等待用户配置。自建 m3u8 / WorkBuddy Hub 程序及其数据需独立迁移。
 
-![PC 登录](screenshot/pc-login.png)
-![PC 主界面](screenshot/pc-main.png)
+## 构建
 
-![小屏设备](screenshot/phone.png)
+使用专用 Ubuntu 22.04 构建环境。`install-env.sh` 会修改 APT 源及安装系统依赖。
 
-## TODO
+```sh
+sudo ./install-env.sh
+./prepare.sh
+./build.sh
+```
 
-* [ ] 在线更新检查
-* [ ] LEDE 代码更新检查
+构建前会检查锁定版本、必要软件包和公开默认设置，构建后验证两种镜像的 gzip 与软件 manifest。生成目录：`lede/bin/targets/rockchip/armv8/`。
 
-## ⚠️ 免责声明
+GitHub Actions 支持手动、main 推送及北京时间每周五 02:00 定时构建。定制开发分支只上传 Actions 固件产物，不修改现有 Release；main 自动构建成功后发布唯一的新标签。手动触发默认不发布，须明确选择 publish。
 
-1. **项目性质说明**  
-   本项目在 GitHub Actions 自动编译过程中：
-   - 实时拉取 [LEDE](https://github.com/coolsnowwolf/lede) 源码，和其它组件源码
-   - 仅添加本仓库中的**公开可审查内容**
+下载源码缓存与工具链分离，工具链每次冷编译。`sources.lock.json` 记录全部 LEDE/feed 版本。升级版本时需更新锁文件并重新验证驱动；此前跟随 master 的构建因 Linux 6.18 移除 `hrtimer_init` 导致蜂窝驱动失败。
 
-2. **设备风险自担**  
-   - 任何因使用本项目固件导致的设备故障/变砖/安全问题
-   - 任何因配置不当产生的网络风险或数据损失
-   - 任何因第三方源码更新引发的兼容性问题
-   **均与项目作者无关**，使用者需自行承担全部风险。
+## 检查与资料
 
-3. **使用限制条款**  
+```sh
+python3 -m unittest discover -s tests -p 'test_*.py' -v
+bash tests/expand-data-test.sh
+```
 
-   ✅ **允许**：
-   - 个人非商业用途
-   - **免费**用于销售设备（预装固件）
-   - **免费**用于技术服务（如刷机）
+- `docs/DEVICE-2026-10-15.md`：实机环境与定制取舍。
+- `docs/device-inventory-2026-10-15.json`：604 个已安装包及筛选后的通用配置。
+- `docs/HANDOFF.md`：维护和验证入口。
+- `package/UPSTREAM.md`：额外软件来源。
 
-   ❌ **禁止**：
-   - 将本仓库发布的固件文件作为付费商品单独销售
-
-   ⚠️ **关键要求**：  
-   当设备购买者/服务对象遇到：
-   - 硬件故障
-   - 网络配置问题
-   - 非本项目导致的软件异常
-
-   卖方/服务方必须自行提供技术支持，严禁将用户引导至本项目寻求帮助
-
-4. 使用本项目即代表您**已充分理解并接受**：
-
-    - 作者不对固件功能作任何明示/暗示担保
-    - 任何商业使用产生的责任与作者无关
-    - 违反使用条款造成的法律纠纷需自行承担
-
-## 恰饭
-
-[来个一键三连加关注呗](https://www.bilibili.com/video/BV1USMDz8EF8/)
+首次启动脚本只会格式化本次明确新建且无文件系统签名的数据分区。遇到不明分区、挂载失败或已有未迁移文件会停止并保留脚本，供检查后重试。整卡刷写与保留配置升级是不同操作，不应依赖初始化脚本保护刷卡前的数据。

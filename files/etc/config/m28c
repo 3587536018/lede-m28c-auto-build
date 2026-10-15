@@ -1,0 +1,2 @@
+config system 'system'
+	option initialized '0'

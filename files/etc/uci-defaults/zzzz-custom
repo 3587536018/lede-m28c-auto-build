@@ -1,130 +1,99 @@
 #!/bin/sh
-# 语言与主题总是强制中文（不依赖 first_boot，防止 luci/iStore 显示英文）
-uci set luci.main.lang='zh_cn'
-uci set luci.main.mediaurlbase='/luci-static/argon'
-uci commit luci
+# Public M28C defaults. Never import credentials, modem identities or subscriptions.
+# /etc/config/m28c is preserved by sysupgrade with other UCI configuration.
+[ "$(uci -q get m28c.system.initialized)" = '1' ] && exit 0
 
-is_first_boot=`uci -q get zz_config.@status[0].first_boot`
-if test $is_first_boot -gt 0; then
-#echo -e "m28cm28c\nm28cm28c" | (passwd root)
-uci set system.@system[0].hostname='wuming'
-uci commit system
-# 确保无预置 root 密码（首次登录自行设置）
-passwd -d root 2>/dev/null || true
-uci del dhcp.lan.ra_slaac
-uci set network.lan.ipaddr='192.168.1.1'
-uci add_list network.lan.ip6class='2_1_2v6'
-uci add_list network.lan.ip6class='3_1_2v6'
-uci add_list network.lan.ip6class='4_1_2v6'
-uci set cpufreq.global.set='1'
-uci set cpufreq.cpufreq.minfreq0='600000'
-uci set cpufreq.cpufreq.maxfreq0='1608000'
-uci commit
-/etc/init.d/network reload
-uci set wireless.radio0.cell_density='0'
-uci set wireless.radio0.country='CN'
-uci set wireless.radio0.channel='149'
-uci set wireless.default_radio0.ssid='BRONYA'
-uci set wireless.default_radio0.encryption='psk2+ccmp'
-uci set wireless.default_radio0.key='3587536018'
-uci commit wireless
-/etc/init.d/network reload
-wifi
-# ===== 5G modem (QModem: RM500Q-CN dual SIM slots) =====
-uci set qmodem.main=main
-uci set qmodem.main.enable_dial='1'
-uci set qmodem.main.start_delay='0'
-uci set qmodem.main.enable_pcie_scan='1'
-uci set qmodem.main.modem_count='2'
-# slot 3_1_2 - primary (enabled)
-uci set qmodem.3_1_2=modem-device
-uci set qmodem.3_1_2.path='/sys/bus/usb/devices/3-1.2/'
-uci set qmodem.3_1_2.data_interface='usb'
-uci set qmodem.3_1_2.enable_dial='1'
-uci set qmodem.3_1_2.soft_reboot='1'
-uci set qmodem.3_1_2.extend_prefix='1'
-uci set qmodem.3_1_2.pdp_type='ipv4v6'
-uci set qmodem.3_1_2.state='enabled'
-uci set qmodem.3_1_2.metric='12'
-uci set qmodem.3_1_2.name='rm500q-cn'
-uci set qmodem.3_1_2.network='wwan0'
-uci set qmodem.3_1_2.manufacturer='quectel'
-uci set qmodem.3_1_2.platform='qualcomm'
-uci set qmodem.3_1_2.wcdma_band='1/8'
-uci set qmodem.3_1_2.lte_band='1/3/5/8/34/38/39/40/41'
-uci set qmodem.3_1_2.nsa_band='41/78/79'
-uci set qmodem.3_1_2.sa_band='1/28/41/78/79'
-uci set qmodem.3_1_2.modes='qmi' 'gobinet' 'ecm' 'mbim' 'rndis' 'ncm'
-uci set qmodem.3_1_2.valid_at_ports='/dev/ttyUSB2' '/dev/ttyUSB3'
-uci set qmodem.3_1_2.at_port='/dev/ttyUSB3'
-uci set qmodem.3_1_2.ports='/dev/ttyUSB0' '/dev/ttyUSB1' '/dev/ttyUSB2' '/dev/ttyUSB3'
-# slot 4_1_2 - backup (disabled)
-uci set qmodem.4_1_2=modem-device
-uci set qmodem.4_1_2.path='/sys/bus/usb/devices/4-1.2/'
-uci set qmodem.4_1_2.data_interface='usb'
-uci set qmodem.4_1_2.enable_dial='1'
-uci set qmodem.4_1_2.soft_reboot='1'
-uci set qmodem.4_1_2.extend_prefix='1'
-uci set qmodem.4_1_2.pdp_type='ipv4v6'
-uci set qmodem.4_1_2.state='disabled'
-uci set qmodem.4_1_2.metric='11'
-uci set qmodem.4_1_2.name='rm500q-cn'
-uci set qmodem.4_1_2.network='wwan0'
-uci set qmodem.4_1_2.manufacturer='quectel'
-uci set qmodem.4_1_2.platform='qualcomm'
-uci set qmodem.4_1_2.wcdma_band='1/8'
-uci set qmodem.4_1_2.lte_band='1/3/5/8/34/38/39/40/41'
-uci set qmodem.4_1_2.nsa_band='41/78/79'
-uci set qmodem.4_1_2.sa_band='1/28/41/78/79'
-uci set qmodem.4_1_2.modes='qmi' 'gobinet' 'ecm' 'mbim' 'rndis' 'ncm'
-uci set qmodem.4_1_2.valid_at_ports='/dev/ttyUSB2' '/dev/ttyUSB3'
-uci set qmodem.4_1_2.at_port='/dev/ttyUSB3'
-uci set qmodem.4_1_2.ports='/dev/ttyUSB0' '/dev/ttyUSB1' '/dev/ttyUSB2' '/dev/ttyUSB3'
-uci commit qmodem
-# ===== TurboACC: flow offloading + fullcone NAT =====
-uci set turboacc.global.set='1'
-uci set turboacc.config.tcpcca='bbr'
-uci set turboacc.config.fastpath='flow_offloading'
-uci set turboacc.config.fastpath_fo_hw='0'
-uci set turboacc.config.fullcone='1'
-uci set firewall.@defaults[0].fullcone='1'
-uci commit turboacc
-uci commit firewall
-# ===== sysctl: docker-compatible bridge settings =====
-cat > /etc/sysctl.d/99-bridge.conf <<'EOF'
-net.bridge.bridge-nf-call-arptables = 0
-net.bridge.bridge-nf-call-ip6tables = 0
-net.bridge.bridge-nf-call-iptables = 0
+. /lib/functions.sh
+
+uci -q batch <<'EOF'
+set luci.main.lang='zh_cn'
+set luci.main.mediaurlbase='/luci-static/argon'
+set system.@system[0].hostname='M28C'
+set system.@system[0].timezone='CST-8'
+set system.@system[0].zonename='Asia/Shanghai'
+set network.lan.ipaddr='192.168.1.1'
+set network.lan.netmask='255.255.255.0'
 EOF
-# ===== SSH: 使用全功能 OpenSSH (sshd), 停用 dropbear =====
-/etc/init.d/dropbear disable 2>/dev/null || true
-/etc/init.d/dropbear stop 2>/dev/null || true
-# OpenSSH 默认 PermitRootLogin=prohibit-password(root 禁密码登录), 需显式允许 root 密码登录
-grep -q '^PermitRootLogin' /etc/ssh/sshd_config || echo 'PermitRootLogin yes' >> /etc/ssh/sshd_config
-grep -q '^PasswordAuthentication' /etc/ssh/sshd_config || echo 'PasswordAuthentication yes' >> /etc/ssh/sshd_config
-/etc/init.d/sshd enable 2>/dev/null || true
-/etc/init.d/sshd restart 2>/dev/null || true
-# ===== opkg feeds: Tencent LEDE mirror (latest stable 24.10.5) =====
-cat > /etc/opkg/distfeeds.conf <<'EOF'
-src/gz openwrt_core https://mirrors.tencent.com/lede/releases/24.10.5/targets/rockchip/armv8/packages
-src/gz openwrt_base https://mirrors.tencent.com/lede/releases/24.10.5/packages/aarch64_generic/base
-src/gz openwrt_luci https://mirrors.tencent.com/lede/releases/24.10.5/packages/aarch64_generic/luci
-src/gz openwrt_packages https://mirrors.tencent.com/lede/releases/24.10.5/packages/aarch64_generic/packages
-src/gz openwrt_routing https://mirrors.tencent.com/lede/releases/24.10.5/packages/aarch64_generic/routing
-src/gz openwrt_telephony https://mirrors.tencent.com/lede/releases/24.10.5/packages/aarch64_generic/telephony
-EOF
-uci -q set zz_config.@status[0].first_boot=0
-uci commit zz_config
+
+if uci -q get argon.@global[0] >/dev/null; then
+    uci set argon.@global[0].primary='#0e7974'
+    uci set argon.@global[0].dark_primary='#35b9ad'
 fi
 
-# ===== iStore 语言兜底：兼容 luci 输出的各种 zh 格式（zh_cn/zh-CN/zh-cn）=====
-for lf in zh_cn zh-CN zh_CN; do
-  if [ -f /www/luci-static/istore/i18n/zh-cn.json ] && [ ! -e "/www/luci-static/istore/i18n/$lf.json" ]; then
-    ln -sf zh-cn.json "/www/luci-static/istore/i18n/$lf.json"
-  fi
+# The owner enables Wi-Fi after choosing their own credentials. Preserve keys
+# already present when upgrading an existing installation.
+configure_wifi() {
+    local section="$1" key
+    config_get key "$section" key
+    [ -n "$key" ] && return 0
+    uci set "wireless.$section.ssid=M28C"
+    uci set "wireless.$section.encryption=sae-mixed"
+    uci set "wireless.$section.disabled=1"
+}
+if [ -f /etc/config/wireless ]; then
+    config_load wireless
+    config_foreach configure_wifi wifi-iface
+fi
 
+if [ -f /etc/config/cpufreq ]; then
+    uci -q batch <<'EOF'
+set cpufreq.global=settings
+set cpufreq.global.set='1'
+set cpufreq.cpufreq=settings
+set cpufreq.cpufreq.governor0='schedutil'
+set cpufreq.cpufreq.minfreq0='1200000'
+set cpufreq.cpufreq.maxfreq0='2016000'
+EOF
+fi
+
+# QModem discovers the modem and USB path. No per-device SIM/APN/AT-port data.
+if [ -f /etc/config/qmodem ]; then
+    uci -q batch <<'EOF'
+set qmodem.main=main
+set qmodem.main.enable_dial='1'
+set qmodem.main.enable_pcie_scan='1'
+set qmodem.main.start_delay='3'
+EOF
+fi
+if [ -f /etc/config/turboacc ]; then
+    uci -q batch <<'EOF'
+set turboacc.global=turboacc
+set turboacc.global.set='1'
+set turboacc.config=turboacc
+set turboacc.config.tcpcca='bbr'
+set turboacc.config.fastpath='flow_offloading'
+set turboacc.config.fastpath_fo_hw='0'
+set turboacc.config.fullcone='1'
+set firewall.@defaults[0].fullcone='1'
+EOF
+fi
+
+# Enable these services from LuCI after supplying the owner's configuration.
+uci -q set openclash.config.enable='0'
+uci -q set upnpd.config.enabled='0'
+uci -q set vsftpd.global.disabled='1'
+for service in openclash vsftpd samba4 ddns ddns-go; do
+    [ ! -x "/etc/init.d/$service" ] || "/etc/init.d/$service" disable
 done
 
-sed -i "s?set wireless\.default_radio\${devidx}\.ssid=LEDE?set wireless\.default_radio\${devidx}\.ssid=\'BRONYA\'?g" /lib/wifi/mac80211.sh
-sed -i "s?set wireless\.default_radio\${devidx}\.encryption=none?set wireless\.default_radio\${devidx}\.encryption=\'psk2+ccmp\'\n\t\t\tset wireless\.default_radio\${devidx}\.key=\'3587536018\'?g" /lib/wifi/mac80211.sh
+# Set the initial root password in LuCI over wired LAN. OpenSSH accepts a root
+# password after setup, but never an empty password. Do not modify /etc/shadow.
+if [ -f /etc/ssh/sshd_config ]; then
+    ssh_config=$(mktemp) || exit 1
+    cat > "$ssh_config" <<'EOF'
+# M28C global defaults (before any preserved Match blocks)
+PermitRootLogin yes
+PasswordAuthentication yes
+PermitEmptyPasswords no
+EOF
+    cat /etc/ssh/sshd_config >> "$ssh_config"
+    cat "$ssh_config" > /etc/ssh/sshd_config || exit 1
+    rm -f "$ssh_config"
+    /etc/init.d/dropbear disable 2>/dev/null || true
+    /etc/init.d/sshd enable || exit 1
+fi
 
+uci set m28c.system=system
+uci set m28c.system.initialized='1'
+uci commit || exit 1
+exit 0
