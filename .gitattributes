@@ -7,3 +7,5 @@
 *.config text eol=lf
 Makefile text eol=lf
 files/** text eol=lf
+# Keep upstream fixture bytes (apart from normalized line endings) for SHA checks.
+tests/fixtures/qmodem-f5035b7d/** whitespace=-blank-at-eol

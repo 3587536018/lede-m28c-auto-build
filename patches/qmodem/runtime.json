@@ -1,0 +1,73 @@
+{
+  "files": [
+    {
+      "path": "application/qmodem/files/etc/init.d/qmodem_init",
+      "sha256": "467ccb818a983333782a8b7c11ac89c380fa277391f274b2ba24975fcc564a14",
+      "patched_sha256": "b296b17d6409ff3aefe4ee40b1d275d54ab16dbe30954c5d48a6a0777602891b",
+      "replacements": [
+        {
+          "old": "        uci delete network.$1\n        uci delete network.${1}v6\n        uci commit network\n        /etc/init.d/network reload\n",
+          "new": "        # M28C: retain logical interfaces while USB enumeration is changing.\n        # The scanner reuses this section and updates its live path/ports.\n"
+        },
+        {
+          "old": "    if [ ! -d \"$path\" ]; then\n        ( sleep 1; /usr/share/qmodem/modem_scan.sh disable \"$1\" >/dev/null 2>&1 ) &",
+          "new": "    if [ ! -d \"$path\" ]; then\n        ( sleep 1; /usr/share/qmodem/modem_scan.sh disable \"$(basename \"$path\")\" >/dev/null 2>&1 ) &"
+        },
+        {
+          "old": "    if [ \"$is_parent\" -ne 0 ] || [ ! -d \"$netdevice_path\" ]; then\n        ( sleep 1; /usr/share/qmodem/modem_scan.sh disable \"$1\" >/dev/null 2>&1 ) &",
+          "new": "    if [ \"$is_parent\" -ne 0 ] || [ ! -d \"$netdevice_path\" ]; then\n        ( sleep 1; /usr/share/qmodem/modem_scan.sh disable \"$(basename \"$path\")\" >/dev/null 2>&1 ) &"
+        },
+        {
+          "old": "start_service() {\n\tconfig_load qmodem\n    _start_scand\n",
+          "new": "# M28C: saved enabled/tty values are not proof of this boot's USB binding.\n_m28c_mark_usb_pending() {\n    local interface fixed state\n    config_get interface \"$1\" data_interface\n    config_get fixed \"$1\" fixed_device 0\n    config_get state \"$1\" state\n    [ \"$interface\" = \"usb\" ] && [ \"$fixed\" != \"1\" ] || return 0\n    [ \"$state\" != \"disabled\" ] || return 0\n    if ! uci -q set \"qmodem.$1.state=disabled\"; then\n        m28c_pending_failed=1\n        return 1\n    fi\n    m28c_pending_changed=1\n}\n\nstart_service() {\n\tconfig_load qmodem\n    config_get block_auto_probe main block_auto_probe 0\n    if [ \"$block_auto_probe\" != \"1\" ]; then\n        m28c_pending_changed=0\n        m28c_pending_failed=0\n        config_foreach _m28c_mark_usb_pending modem-device\n        [ \"$m28c_pending_failed\" = \"0\" ] || return 1\n        if [ \"$m28c_pending_changed\" = \"1\" ]; then\n            uci commit qmodem || return 1\n            config_load qmodem\n        fi\n    fi\n    _start_scand\n"
+        },
+        {
+          "old": "    if [ \"$delay\" -gt 0 ]; then\n        logger \"Delay QModem Boot init scan for $delay S\"\n        ( sleep \"$delay\"; /usr/share/qmodem/modem_scan.sh scan >/dev/null 2>&1 ) &\n    fi\n    start\n",
+          "new": "    start || return $?\n    if [ \"$delay\" -gt 0 ]; then\n        logger \"Delay QModem Boot init scan for $delay S\"\n        ( sleep \"$delay\"; /usr/share/qmodem/modem_scan.sh scan >/dev/null 2>&1 ) &\n    fi\n"
+        }
+      ]
+    },
+    {
+      "path": "application/qmodem/files/etc/init.d/qmodem_network",
+      "sha256": "2280e477caa6bc6a563d85ba300c3e39153639a894ee6a43bd18f7b82028dfa3",
+      "patched_sha256": "19e9cdd431eb6e1acf31fe718aac8728048fbf822a284470d00e0677fc1cd4a1",
+      "replacements": [
+        {
+          "old": "_update_modem()\n{\n    local target\n",
+          "new": "# M28C: a running dial process caches its ports; procd must see rebinding.\n_m28c_binding()\n{\n    local path at_port network generation\n    config_load qmodem\n    config_get path \"$1\" path\n    config_get at_port \"$1\" at_port\n    config_get network \"$1\" network\n    config_get generation \"$1\" m28c_usb_devnum\n    printf '%s|%s|%s|%s' \"$path\" \"$at_port\" \"$network\" \"$generation\"\n}\n\n_update_modem()\n{\n    local target binding previous_binding\n"
+        },
+        {
+          "old": "    if [ \"$current_status\" != \"$target\" ];then\n",
+          "new": "    if [ \"$current_status\" = \"1\" ] && [ \"$target\" = \"1\" ]; then\n        binding=$(_m28c_binding \"$1\")\n        previous_binding=$(printf '%s\\n' \"$data\" | jq -r '.env.QMODEM_BINDING // empty')\n        if [ \"$binding\" != \"$previous_binding\" ]; then\n            # Do not run hang with the newly assigned port: it may already dial.\n            procd_kill \"$service\" \"modem_$1\"\n            dial \"$1\"\n            logger -t qmodem_network \"Rebound modem $1 to current USB devices\"\n            return\n        fi\n    fi\n    if [ \"$current_status\" != \"$target\" ];then\n"
+        },
+        {
+          "old": "    procd_set_param command \"/usr/share/qmodem/modem_dial.sh\" \"$1\" dial\n",
+          "new": "    procd_set_param command \"/usr/share/qmodem/modem_dial.sh\" \"$1\" dial\n    procd_set_param env QMODEM_BINDING=\"$(_m28c_binding \"$1\")\"\n"
+        },
+        {
+          "old": "    /usr/share/qmodem/modem_dial.sh \"$1\" hang\n",
+          "new": "    local path state at_port interface real_path real_at\n    path=$(uci -q get \"qmodem.$1.path\")\n    state=$(uci -q get \"qmodem.$1.state\")\n    # A removed device's tty number may now belong to another module.\n    [ \"$state\" != \"disabled\" ] && [ -d \"$path\" ] || return 0\n    interface=$(uci -q get \"qmodem.$1.data_interface\")\n    if [ \"$interface\" = \"usb\" ]; then\n        at_port=$(uci -q get \"qmodem.$1.at_port\")\n        real_path=$(readlink -f \"$path\")\n        real_at=$(readlink -f \"/sys/class/tty/${at_port##*/}/device\")\n        [ -n \"$real_path\" ] && [ -n \"$real_at\" ] || return 0\n        case \"$real_at\" in \"$real_path\"/*) ;; *) return 0 ;; esac\n    fi\n    /usr/share/qmodem/modem_dial.sh \"$1\" hang\n"
+        }
+      ]
+    },
+    {
+      "path": "application/qmodem_monitor/files/usr/share/qmodem/modem_monitor.sh",
+      "sha256": "f1b4ce92bcbdbef6b4cf958aea780f9374a139b8cdf1bd2b4540f33f4f17786b",
+      "patched_sha256": "143ce4314000569b57f328fce81e4acf3285f7c602048bae03e245da589049b9",
+      "replacements": [
+        {
+          "old": "\t[ \"$USE_UBUS\" = \"1\" ] && use_ubus_flag=\"-u\"\n    log \"loaded config for modem $Modem_ID: at_port=$AT_PORT, alias=$ALIAS, use_ubus=$USE_UBUS\"\n",
+          "new": "    use_ubus_flag=\"\"\n\t[ \"$USE_UBUS\" = \"1\" ] && use_ubus_flag=\"-u\"\n    config_get MODEM_PATH \"$Modem_ID\" path\n    config_get MODEM_STATE \"$Modem_ID\" state\n    config_get MODEM_INTERFACE \"$Modem_ID\" data_interface\n    config_get MODEM_NETWORK \"$Modem_ID\" network\n    config_get MODEM_DIAL \"$Modem_ID\" enable_dial\n    config_get GLOBAL_DIAL main enable_dial\n    config_get MODEM_GENERATION \"$Modem_ID\" m28c_usb_devnum\n    MODEM_BINDING=\"$MODEM_PATH|$AT_PORT|$MODEM_NETWORK|$ALIAS|$MODEM_GENERATION\"\n}\n\n# M28C: never send recovery commands to a stale or reassigned tty.\nmodem_binding_ready(){\n    local real_path real_at\n    [ \"$MODEM_STATE\" = \"enabled\" ] || return 1\n    [ \"$MODEM_DIAL\" != \"0\" ] && [ \"$GLOBAL_DIAL\" != \"0\" ] || return 1\n    [ -n \"$AT_PORT\" ] && [ -d \"$MODEM_PATH\" ] || return 1\n    if [ \"$MODEM_INTERFACE\" = \"usb\" ]; then\n        real_path=$(readlink -f \"$MODEM_PATH\")\n        real_at=$(readlink -f \"/sys/class/tty/${AT_PORT##*/}/device\")\n        [ -n \"$real_path\" ] && [ -n \"$real_at\" ] || return 1\n        case \"$real_at\" in \"$real_path\"/*) ;; *) return 1 ;; esac\n    fi\n    return 0\n"
+        },
+        {
+          "old": "while true; do\n    update_netcfg\n",
+          "new": "while true; do\n    previous_binding=$MODEM_BINDING\n    update_cfg\n    if [ \"$previous_binding\" != \"$MODEM_BINDING\" ]; then\n        failed_count=0\n        readiness_grace=$Threshold\n    fi\n    if ! modem_binding_ready; then\n        failed_count=0\n        readiness_grace=$Threshold\n        sleep \"$Interval\"\n        continue\n    fi\n    update_netcfg\n"
+        },
+        {
+          "old": "        run_actions\n        failed_count=0\n",
+          "new": "        # Enumeration may change while this monitor is sleeping.\n        failed_binding=$MODEM_BINDING\n        update_cfg\n        if [ \"$failed_binding\" = \"$MODEM_BINDING\" ] && modem_binding_ready; then\n            run_actions\n        fi\n        failed_count=0\n"
+        }
+      ]
+    }
+  ]
+}

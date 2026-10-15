@@ -7,6 +7,7 @@
 - Argon 中文界面与新的 M28C 控制台：实时运行状态、存储容量、5G / 应用 / Docker / 文件共享 / 网络设置快捷入口，适配手机。
 - iStore 语言兼容补丁：显式加载翻译，统一 `zh_cn`、`zh-CN` 等语言格式，检查中文资源后再回退。
 - QModem、OpenClash、Docker / Compose / Dockerman、Homebox、DDNS / DDNS-Go、Samba、FTP、TurboACC、OpenSSH、常用诊断工具。
+- 5G USB 槽位自适应：按固定物理接口识别模块，重启后总线或串口编号变化时保留拨号设置，并刷新拨号进程与断线监控。适用范围与验证方式见 `docs/QMODEM-USB-REBIND.md`。
 - 1 GiB 根分区，ext4 与 squashfs 两种镜像；首次启动使用尾部空闲空间建立 `/opt`，或复用已有 `opt` / `optdata` 分区。
 - Docker 数据目录 `/opt/docker`，512 MiB swap 只在数据分区正确挂载后创建。
 
@@ -45,6 +46,7 @@ bash tests/expand-data-test.sh
 - `docs/DEVICE-2026-10-15.md`：实机环境与定制取舍。
 - `docs/device-inventory-2026-10-15.json`：604 个已安装包及筛选后的通用配置。
 - `docs/HANDOFF.md`：维护和验证入口。
+- `docs/QMODEM-USB-REBIND.md`：5G 槽位识别、配置保留和热插拔恢复。
 - `package/UPSTREAM.md`：额外软件来源。
 
 首次启动脚本只会格式化本次明确新建且无文件系统签名的数据分区。遇到不明分区、挂载失败或已有未迁移文件会停止并保留脚本，供检查后重试。整卡刷写与保留配置升级是不同操作，不应依赖初始化脚本保护刷卡前的数据。

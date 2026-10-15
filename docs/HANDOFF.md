@@ -17,6 +17,7 @@
 - `files/etc/uci-defaults/99-expand-data`：幂等存储初始化，仅对明确新建分区格式化，挂载确认后配置 Docker/swap。
 - `package/luci-app-m28c`：基于 LuCI RPC 的中文首页和响应式样式。
 - `scripts/customize-ui.py`：iStore 控制器的严格、幂等语言补丁。现机 iStore 标签已显示中文，补丁解决新安装/翻译资源缺失时的英文回退。
+- `scripts/customize-qmodem.py` 与 `patches/qmodem/`：固定物理 USB 接口身份、槽位变更后复用 UCI 段，以及拨号/监控进程重新绑定。完整说明见 `docs/QMODEM-USB-REBIND.md`。升级 QModem 时补丁哈希不匹配会停止构建。
 - `.github/workflows/build.yml`：Ubuntu22.04、下载缓存、固件及失败日志 artifact、唯一Release标签。
 
 ## 默认访问

@@ -55,6 +55,10 @@ for custom_package in "$ROOT_DIR"/package/*; do
 done
 python3 "$ROOT_DIR/scripts/customize-public.py" "$ROOT_DIR/lede"
 python3 "$ROOT_DIR/scripts/customize-ui.py" "$ROOT_DIR/lede"
+python3 "$ROOT_DIR/scripts/customize-qmodem.py" "$ROOT_DIR/lede"
+# Catch scanner integration errors before starting the cross-toolchain build.
+cc -fsyntax-only -std=c99 -D_GNU_SOURCE -Wall -Wextra \
+    feeds/qmodem/application/modem_scan/src/modem_scand.c
 cp "$ROOT_DIR/m28c.config" .config
 
 echo "Generate defconfig"

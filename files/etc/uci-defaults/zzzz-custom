@@ -51,6 +51,7 @@ if [ -f /etc/config/qmodem ]; then
     uci -q batch <<'EOF'
 set qmodem.main=main
 set qmodem.main.enable_dial='1'
+set qmodem.main.enable_usb_scan='1'
 set qmodem.main.enable_pcie_scan='1'
 set qmodem.main.start_delay='3'
 EOF
