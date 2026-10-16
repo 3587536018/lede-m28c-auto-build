@@ -156,7 +156,11 @@ def selected_ipk_packages(lede: Path, config: str) -> tuple[set[str], list[str]]
                                  f"in .packageinfo line {number}") from error
     if free_text:
         raise ValueError("Unterminated Description/Config in .packageinfo")
-    if not {"kernel", "libc"}.issubset(catalog):
+    # The pinned package/kernel/linux/Makefile skips BuildPackage,kernel during
+    # DUMP and selects it locally during compilation. It is intentionally absent
+    # from .packageinfo/.config; its actual IPK and full ABI are checked against
+    # the mandatory firmware manifest independently of this selected inventory.
+    if "libc" not in catalog:
         raise ValueError("Incomplete build package metadata")
     chosen = selected & catalog.keys()
     packages = {name for name in chosen if "ipkg" in catalog[name].get("Type", "").split()

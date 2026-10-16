@@ -102,6 +102,21 @@ class PackageExportTests(unittest.TestCase):
             self.export()
         self.assertFalse(self.output.exists())
 
+    def omit_dumped_package(self, name):
+        record = f"Package: {name}\nType: ipkg\nDescription: test\n@@\n\n"
+        metadata = self.packageinfo.read_text()
+        self.assertEqual(metadata.count(record), 1)
+        self.packageinfo.write_text(metadata.replace(record, "", 1))
+
+    def omit_virtual_kernel_selection(self):
+        # The locked kernel Makefile omits BuildPackage,kernel in DUMP mode,
+        # and enables CONFIG_PACKAGE_kernel only in its own build context.
+        self.omit_dumped_package("kernel")
+        config = self.lede / ".config"
+        text = config.read_text()
+        self.assertEqual(text.count("CONFIG_PACKAGE_kernel=y\n"), 1)
+        config.write_text(text.replace("CONFIG_PACKAGE_kernel=y\n", "", 1))
+
     def test_complete_export_keeps_signed_bytes_and_never_copies_private_keys(self):
         report = self.export()
         self.assertEqual(report["package_files"], 4)
@@ -214,6 +229,37 @@ class PackageExportTests(unittest.TestCase):
             path.unlink()
         self.add_package(self.core, "kernel", "6.12.104-1-other-abi", indexed=False)
         self.reject("Unexpected unindexed package")
+
+    def test_virtual_kernel_omitted_from_build_metadata_still_exports_verified_ipk(self):
+        self.omit_virtual_kernel_selection()
+        report = self.export()
+        self.assertEqual(report["selected_packages_verified"], 3)
+        self.assertEqual(report["firmware_manifest_packages"], 4)
+        self.assertEqual(report["package_files"], 4)
+        self.assertEqual(report["kernel"], KERNEL)
+        kernels = [package for feed in report["feeds"] for package in feed["packages"]
+                   if package["name"] == "kernel"]
+        self.assertEqual(len(kernels), 1)
+        self.assertFalse(kernels[0]["index_signed"])
+        self.assertEqual(kernels[0]["version"], KERNEL)
+        self.assertEqual((self.output / "core" / kernels[0]["filename"]).read_bytes(),
+                         (self.core / kernels[0]["filename"]).read_bytes())
+
+    def test_virtual_kernel_without_actual_ipk_is_rejected(self):
+        self.omit_virtual_kernel_selection()
+        next(self.core.glob("kernel_*.ipk")).unlink()
+        self.reject("Firmware packages missing from export: kernel")
+
+    def test_virtual_kernel_with_different_complete_abi_is_rejected(self):
+        self.omit_virtual_kernel_selection()
+        next(self.core.glob("kernel_*.ipk")).unlink()
+        self.add_package(self.core, "kernel", "6.12.104-1-other-abi", indexed=False)
+        self.reject("Unexpected unindexed package: kernel")
+
+    def test_virtual_kernel_does_not_allow_missing_libc_metadata(self):
+        self.omit_virtual_kernel_selection()
+        self.omit_dumped_package("libc")
+        self.reject("Incomplete build package metadata")
 
     def test_unindexed_exception_metadata_cannot_trick_path_extraction(self):
         path = next(self.core.glob("libc_*.ipk"))
