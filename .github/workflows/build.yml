@@ -120,7 +120,7 @@ jobs:
       - name: Export matching signed packages
         run: |
           set -euo pipefail
-          python3 scripts/export-package-repository.py lede package_assets
+          python3 scripts/export-package-repository.py lede package_assets 2>&1 | tee /tmp/package-export.log
           cp sources.lock.json package_assets/
           git rev-parse HEAD > package_assets/customization.commit
           cd package_assets
@@ -150,10 +150,11 @@ jobs:
         if: always()
         run: |
           mkdir -p build-diagnostics
-          for file in /tmp/envsetup.log /tmp/prepare.log /tmp/buildall.log /tmp/build.log /tmp/buildfail.log /tmp/tmpinfo.log; do
+          for file in /tmp/envsetup.log /tmp/prepare.log /tmp/buildall.log /tmp/build.log /tmp/buildfail.log /tmp/tmpinfo.log /tmp/package-export.log; do
             [ ! -f "$file" ] || cp "$file" build-diagnostics/
           done
           [ ! -f lede/.config ] || cp lede/.config build-diagnostics/generated.config
+          [ ! -f lede/tmp/.packageinfo ] || cp lede/tmp/.packageinfo build-diagnostics/packageinfo.txt
           cp sources.lock.json build-diagnostics/
           df -h > build-diagnostics/disk.txt
       - name: Upload diagnostics
