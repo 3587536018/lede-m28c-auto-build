@@ -124,21 +124,38 @@ def read_manifest(path: Path) -> dict[str, str]:
 
 def selected_ipk_packages(lede: Path, config: str) -> tuple[set[str], list[str]]:
     selected = set(re.findall(r"^CONFIG_PACKAGE_([^=\n]+)=[ym]$", config, re.M))
-    text = contained_file(lede / "tmp/.packageinfo", lede).read_text(encoding="utf-8")
-    catalog, current, in_fields = {}, None, False
+    data = contained_file(lede / "tmp/.packageinfo", lede).read_bytes()
+    catalog, current, in_fields, free_text = {}, None, False, False
     # .packageinfo contains free-form Description/Config sections terminated by
-    # @@; it is not a Debian control file. Read only the dumped package headers.
-    for line in text.splitlines():
-        if line.startswith("Package: "):
-            current, in_fields = line.removeprefix("Package: "), True
+    # @@ and legacy non-UTF-8 descriptions. Only the structural fields used for
+    # package selection need decoding; no signed index bytes are transformed.
+    for number, raw in enumerate(data.split(b"\n"), 1):
+        line = raw.removesuffix(b"\r")
+        if free_text:
+            if line == b"@@":
+                free_text = False
+            continue
+        if line.startswith((b"Description:", b"Config:")):
+            free_text, in_fields = True, False
+            continue
+        if line.startswith(b"Package: "):
+            try:
+                current = line.removeprefix(b"Package: ").decode("ascii")
+            except UnicodeDecodeError as error:
+                raise ValueError(f"Non-ASCII Package in .packageinfo line {number}") from error
+            in_fields = True
             if current in catalog or not SAFE_NAME.fullmatch(current):
-                raise ValueError("Invalid or duplicate build package metadata")
+                raise ValueError(f"Invalid or duplicate build package metadata: {current}")
             catalog[current] = {}
-        elif in_fields and line.startswith("Description:"):
-            in_fields = False
-        elif in_fields and line.startswith(("Type:", "Build-Only:")):
-            field, value = line.split(":", 1)
-            catalog[current][field] = value.strip()
+        elif in_fields and line.startswith((b"Type:", b"Build-Only:")):
+            field, value = line.split(b":", 1)
+            try:
+                catalog[current][field.decode("ascii")] = value.strip().decode("ascii")
+            except UnicodeDecodeError as error:
+                raise ValueError(f"Non-ASCII {field.decode('ascii')} for {current} "
+                                 f"in .packageinfo line {number}") from error
+    if free_text:
+        raise ValueError("Unterminated Description/Config in .packageinfo")
     if not {"kernel", "libc"}.issubset(catalog):
         raise ValueError("Incomplete build package metadata")
     chosen = selected & catalog.keys()
@@ -161,7 +178,10 @@ def inspect_feed(directory: Path, name: str, bin_root: Path, architecture: str,
     if gzip.decompress(indices["Packages.gz"].read_bytes()) != data:
         raise ValueError(f"Compressed index differs from Packages: {name}")
     verify_signature(usign, key, directory)
-    records = control_records(data)
+    try:
+        records = control_records(data)
+    except UnicodeDecodeError as error:
+        raise ValueError(f"Invalid UTF-8 in signed {name}/Packages at byte {error.start}") from error
     files, packages, seen = {}, [], set()
     for record in records:
         package_name, version = identity(record, architecture)

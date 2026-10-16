@@ -147,6 +147,17 @@ class PackageExportTests(unittest.TestCase):
         (self.core / "Packages.gz").write_bytes(gzip.compress(b"different index"))
         self.reject("Compressed index differs")
 
+    def test_invalid_utf8_index_reports_feed_and_byte_offset_after_signature_check(self):
+        data = (self.core / "Packages").read_bytes().replace(
+            b"Description: Test package", b"Description: legacy \xa1 text", 1)
+        offset = data.index(b"\xa1")
+        (self.core / "Packages").write_bytes(data)
+        (self.core / "Packages.gz").write_bytes(gzip.compress(data))
+        self.reject(f"Invalid UTF-8 in signed core/Packages at byte {offset}")
+        self.run.assert_called_once()
+        self.assertIn(str(self.core / "Packages"), self.run.call_args.args[0])
+        self.assertEqual((self.core / "Packages").read_bytes(), data)
+
     def test_signature_failure_stops_before_output_creation(self):
         self.run.side_effect = subprocess.CalledProcessError(1, ["usign"], stderr="verification failed")
         self.reject("usign verification failed")
@@ -230,6 +241,60 @@ class PackageExportTests(unittest.TestCase):
         report = self.export()
         self.assertEqual(report["selected_packages_verified"], 4)
         self.assertEqual(report["selected_non_ipk_build_packages"], ["u-boot-demo"])
+
+    def test_legacy_metadata_text_and_embedded_headers_preserve_real_inventory(self):
+        with (self.lede / ".config").open("a") as stream:
+            stream.write("CONFIG_PACKAGE_fake-description=y\nCONFIG_PACKAGE_fake-config=m\n")
+        metadata = (
+            b"Package: kernel\nType: ipkg\nTitle: legacy \xa1 text\nMaintainer: legacy \xa1 name\n"
+            b"Description: legacy \xa1 description\nType: bin\nBuild-Only: 1\n"
+            b"Package: fake-description\nType: ipkg\nBuild-Only: 0\n@@\n"
+            b"Type: bin\nBuild-Only: 1\n"
+            b"Package: libc\nType: ipkg\nDescription: real package after description\n@@\n"
+            b"Config:\nconfig TEST\n\thelp\n\t  legacy \xa1 config\n"
+            b"Package: fake-config\nType: ipkg\nBuild-Only: 0\n@@\n"
+            b"Type: bin\nBuild-Only: 1\n"
+            b"Package: demo\nType: ipkg\nDescription: real package after config\n@@\n"
+            b"Package: libexample\nType: ipkg\nDescription: ABI alias\n@@\n"
+        )
+        for name, newline in (("lf", b"\n"), ("crlf", b"\r\n")):
+            with self.subTest(newline=name):
+                self.packageinfo.write_bytes(metadata.replace(b"\n", newline))
+                self.output = self.root / ("export-" + name)
+                report = self.export()
+                self.assertEqual(report["selected_packages_verified"], 4)
+                self.assertEqual(report["selected_non_ipk_build_packages"], [])
+                self.assertEqual(report["package_files"], 4)
+                for feed, source in (("core", self.core), ("base", self.base)):
+                    for filename in EXPORT.INDEX_FILES:
+                        self.assertEqual((self.output / feed / filename).read_bytes(),
+                                         (source / filename).read_bytes())
+
+    def test_metadata_structural_fields_reject_non_ascii_bytes(self):
+        original = self.packageinfo.read_bytes()
+        record = b"Package: strict-fields\nType: ipkg\nBuild-Only: 0\nDescription: test\n@@\n"
+        for field, valid, invalid in (
+                ("Package", b"Package: strict-fields", b"Package: strict-\xa1fields"),
+                ("Type", b"Type: ipkg", b"Type: ip\xa1kg"),
+                ("Build-Only", b"Build-Only: 0", b"Build-Only: \xa10")):
+            with self.subTest(field=field):
+                self.packageinfo.write_bytes(original + record.replace(valid, invalid))
+                self.reject("Non-ASCII " + field)
+
+    def test_real_duplicate_metadata_package_is_still_rejected(self):
+        with self.packageinfo.open("ab") as stream:
+            stream.write(b"Package: demo\nType: ipkg\nDescription: duplicate package\n@@\n")
+        self.reject("duplicate build package metadata.*demo")
+
+    def test_unterminated_metadata_text_cannot_hide_selected_packages(self):
+        original = self.packageinfo.read_bytes()
+        with (self.lede / ".config").open("a") as stream:
+            stream.write("CONFIG_PACKAGE_missing-module=m\n")
+        for block in (b"Description: legacy \xa1 description\n", b"Config:\nlegacy \xa1 config\n"):
+            with self.subTest(block=block.split(b":", 1)[0]):
+                self.packageinfo.write_bytes(
+                    original + block + b"Package: missing-module\nType: ipkg\n")
+                self.reject("Unterminated Description/Config")
 
     def test_private_key_cannot_be_exported_under_public_filename(self):
         secret = b"Ed" + bytes(102)
