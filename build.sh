@@ -36,6 +36,11 @@ python3 "$ROOT_DIR/scripts/prepare-sources.py" --root "$ROOT_DIR" --verify-feeds
 ./scripts/feeds install -a
 ./scripts/feeds install -d y -p istore luci-app-store
 ./scripts/feeds install -a -p qmodem
+# LuCI also contains an older OpenClash. The feed installer keeps the first
+# installed non-core package even with -f, so explicitly replace its link.
+./scripts/feeds uninstall luci-app-openclash
+./scripts/feeds install -p openclash luci-app-openclash
+python3 "$ROOT_DIR/scripts/prepare-sources.py" --root "$ROOT_DIR" --verify-openclash-source
 
 # Passwall is not selected and brings dependencies absent from this build tree.
 rm -rf package/feeds/luci/luci-app-passwall feeds/luci/applications/luci-app-passwall

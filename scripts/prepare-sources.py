@@ -162,13 +162,48 @@ def required_packages(path):
     return packages
 
 
-def verify_packages(path, required_path, manifest=False):
+def openclash_version(lock):
+    feeds = [feed for feed in lock["feeds"] if feed["name"] == "openclash"]
+    if len(feeds) != 1 or not re.fullmatch(r"v[0-9]+(?:\.[0-9]+)+", feeds[0].get("release", "")):
+        raise ValueError("OpenClash must have one locked feed and an explicit release version")
+    return feeds[0]["release"][1:]
+
+
+def verify_openclash_source(directory, lock):
+    expected_version = openclash_version(lock)
+    expected = (directory / "feeds/openclash/luci-app-openclash").resolve(strict=True)
+    installed = list((directory / "package/feeds").glob("*/luci-app-openclash"))
+    if len(installed) != 1 or installed[0].resolve(strict=True) != expected:
+        raise ValueError("OpenClash package source must resolve only to the locked openclash feed")
+    makefile = (expected / "Makefile").read_text(encoding="utf-8")
+    versions = re.findall(r"^PKG_VERSION\s*:=\s*(\S+)\s*$", makefile, re.M)
+    if versions != [expected_version]:
+        raise ValueError(f"OpenClash source version {versions} does not match locked {expected_version}")
+    print(f"Verified OpenClash source: {installed[0]} -> {expected}, version {expected_version}")
+
+
+def verify_packages(path, required_path, manifest=False, lock=None):
     lines = set(path.read_text(encoding="utf-8").splitlines())
-    names = {line.partition(" - ")[0] for line in lines} if manifest else None
+    versions = {}
+    if manifest:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            name, separator, version = line.partition(" - ")
+            if not separator or not version or name in versions:
+                raise ValueError(f"Invalid or duplicate firmware manifest entry: {line}")
+            versions[name] = version
+    names = set(versions) if manifest else None
     missing = [name for name in required_packages(required_path)
                if (name not in names if manifest else f"CONFIG_PACKAGE_{name}=y" not in lines)]
     if missing:
         raise ValueError(f"Required packages missing from {path.name}: " + ", ".join(missing))
+    if manifest and lock is not None:
+        core_version = lock["binaries"]["openclash_core"]["version"]
+        expected = {"luci-app-openclash": {openclash_version(lock)},
+                    "m28c-openclash-core": {core_version + "-1", core_version + "-r1"}}
+        for name, allowed in expected.items():
+            if versions.get(name) not in allowed:
+                raise ValueError(f"Locked package version mismatch: {name} is {versions.get(name)}, "
+                                 f"expected {' or '.join(sorted(allowed))}")
     print(f"Required packages verified in {path}")
 
 
@@ -180,6 +215,7 @@ def main():
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--verify-baseline", action="store_true")
     mode.add_argument("--verify-feeds", action="store_true")
+    mode.add_argument("--verify-openclash-source", action="store_true")
     mode.add_argument("--verify-config", type=Path)
     mode.add_argument("--verify-manifest", type=Path)
     parser.add_argument("--required-packages", type=Path)
@@ -191,10 +227,12 @@ def main():
         verify_baseline(directory, lock)
     elif args.verify_feeds:
         verify_feeds(directory, lock)
+    elif args.verify_openclash_source:
+        verify_openclash_source(directory, lock)
     elif args.verify_config or args.verify_manifest:
         verify_packages(args.verify_config or args.verify_manifest,
                         args.required_packages or root / "configs/required-packages.txt",
-                        manifest=args.verify_manifest is not None)
+                        manifest=args.verify_manifest is not None, lock=lock)
     else:
         checkout_source(directory, lock["lede"])
         sync_overlay(root, directory, lock)

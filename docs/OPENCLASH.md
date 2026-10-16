@@ -4,6 +4,14 @@
 
 两者记录在 `sources.lock.json`。LEDE、内核和其他 feeds 继续使用原有锁定版本。“最新版”指这次核实的明确版本；后续更新必须重新确认 release 和 SHA256，再更新锁文件，构建时不会追踪浮动 latest。
 
+## 插件源码选择
+
+#106 的实际镜像检查发现，虽然官方 OpenClash feed 已按锁文件检出，批量安装 feeds 仍优先选择了 LuCI feed 自带的 `0.47.075`。构建日志和镜像中的包控制文件都确认使用了 `feeds/luci/applications/luci-app-openclash`。
+
+构建现在在批量安装后，先通过 `feeds uninstall` 移除 OpenClash 的已安装链接，再明确从 `openclash` feed 安装。锁定安装器的 `-f` 主要用于覆盖 core 包，不能可靠替换已安装的其他 feed 包，因此不能省略卸载链接这一步。该操作保留两个 feed 的原始源码。
+
+编译前检查唯一的已安装 OpenClash 路径解析到官方锁定 feed，且 Makefile 版本等于锁中的 release；镜像生成后，再按锁文件核对 manifest 的插件和核心包版本。旧版同名包不会再仅凭“包名存在”通过验收。
+
 ## 核心下载与安装
 
 官方核心资产：
@@ -25,6 +33,8 @@ python3 scripts/prepare-openclash-core.py lede
 脚本复用 `lede/dl` 下载缓存，核验压缩包长度和 SHA256，再完整检查 gzip 校验和与结束位置。解压后检查 ELF64、小端序、AArch64、有效可执行段和无动态解释器；不在构建主机运行 ARM64 核心。损坏的下载或核心不会替换已有输出。
 
 `m28c-openclash-core` 是独立 opkg 软件包，版本为 `1.19.32-1`。它把核心以 `0755` 权限安装到最新插件使用的 `/etc/openclash/core/clash_meta`，并将公开来源、二进制摘要和版本放到 `/usr/share/m28c-openclash-core/source.json`。配置中必须选择 `CONFIG_PACKAGE_m28c-openclash-core=y`，且最终 manifest 必须包含该包和 `luci-app-openclash`。
+
+该包单独禁用安装后的 `RSTRIP` 处理，保留已经校验的官方 ELF 原始字节。#106 的配置启用了 `sstrip -z`；默认打包流程删掉了核心尾部的 31,452 字节，并改写最后一个加载段的文件长度，导致镜像中的摘要与 `source.json` 不一致。该镜像的校验失败记录保留，不把裁剪后的摘要改成预期值。回归测试通过 GNU make 执行实际包的准备、安装及 strip 调用阶段，并以会改写文件的 hook 作对照；新镜像仍须按上面的官方原始摘要重新验收。
 
 ## 用户配置与验收
 

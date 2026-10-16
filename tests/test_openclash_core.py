@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import shutil
 import struct
+import subprocess
 import tempfile
 import unittest
 from unittest import mock
@@ -192,6 +193,57 @@ class OpenClashCoreTests(unittest.TestCase):
         with mock.patch.object(core.urllib.request, "urlopen", side_effect=AssertionError("network not expected")):
             with self.assertRaisesRegex(ValueError, "package version"):
                 core.prepare(self.root, lock)
+
+    def test_package_install_preserves_verified_bytes_through_strip_stage(self):
+        make = os.environ.get("MAKE") or shutil.which("make")
+        if not make:
+            self.skipTest("GNU make is required for the package install/strip regression")
+        binary = elf64() + b"upstream release trailer\0\0\0"
+        metadata = json.dumps({"sha256": hashlib.sha256(binary).hexdigest(),
+                               "size": len(binary)}).encode()
+        (self.root / "files").mkdir()
+        (self.root / "files/clash_meta").write_bytes(binary)
+        (self.root / "files/source.json").write_bytes(metadata)
+        shutil.copyfile(ROOT / "package/m28c-openclash-core/Makefile", self.root / "Makefile")
+        (self.root / "rules.mk").write_text(
+            "INCLUDE_DIR:=.\nPKG_BUILD_DIR:=build\n"
+            "INSTALL_DIR:=install -d -m0755\nINSTALL_BIN:=install -m0755\n"
+            "INSTALL_DATA:=install -m0644\nCP:=cp\nRSTRIP:=sh strip-probe.sh\n")
+        # Execute the production package's prepare/install definitions and its
+        # RSTRIP expansion at the same eval stage as locked package-ipkg.mk.
+        # The hostile hook detects any post-verification binary rewriting.
+        (self.root / "package.mk").write_text(
+            "define BuildPackage\n.PHONY: package-test\npackage-test:\n"
+            "\t$(Build/Prepare)\n"
+            "\t$(call Package/$(1)/install,image)\n"
+            "\t$(RSTRIP) image\nendef\n")
+        (self.root / "strip-probe.sh").write_text(
+            '#!/bin/sh\nset -eu\nprintf modified >> "$1/etc/openclash/core/clash_meta"\n'
+            'touch "$1/strip-called"\n')
+
+        def package(*overrides):
+            result = subprocess.run(
+                [make, "--no-print-directory", "TOPDIR=.", *overrides, "package-test"],
+                cwd=self.root, capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+        package()
+        installed = self.root / "image/etc/openclash/core/clash_meta"
+        installed_metadata = self.root / "image/usr/share/m28c-openclash-core/source.json"
+        self.assertEqual(installed.read_bytes(), binary)
+        self.assertEqual(installed_metadata.read_bytes(), metadata)
+        self.assertEqual(hashlib.sha256(installed.read_bytes()).hexdigest(),
+                         json.loads(installed_metadata.read_bytes())["sha256"])
+        self.assertFalse((self.root / "image/strip-called").exists())
+        if os.name != "nt":
+            self.assertEqual(installed.stat().st_mode & 0o777, 0o755)
+        # Command-line make assignments override package assignments. Prove
+        # this harness actually executes and detects the otherwise-active hook.
+        package("RSTRIP=sh strip-probe.sh")
+        self.assertTrue((self.root / "image/strip-called").is_file())
+        self.assertEqual(installed.read_bytes(), binary + b"modified")
+        self.assertNotEqual(hashlib.sha256(installed.read_bytes()).hexdigest(),
+                            json.loads(installed_metadata.read_bytes())["sha256"])
 
 
 if __name__ == "__main__":

@@ -7,6 +7,10 @@ PKG_LICENSE:=GPL-3.0-only
 
 include $(INCLUDE_DIR)/package.mk
 
+# Preserve the verified upstream ELF bytes and the SHA256 in source.json.
+# The default package-ipkg.mk RSTRIP stage otherwise runs sstrip -z.
+RSTRIP:=:
+
 define Package/m28c-openclash-core
   SECTION:=net
   CATEGORY:=Network
