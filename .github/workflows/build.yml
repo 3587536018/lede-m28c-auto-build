@@ -38,11 +38,17 @@ jobs:
           command -v make
           python3 -m unittest discover -s tests -p 'test_*.py' -v
           bash tests/expand-data-test.sh
+          bash tests/automount-test.sh
           bash -n build.sh
           bash -n prepare.sh
           sh -n install-env.sh
           sh -n files/etc/uci-defaults/zzzz-custom
           sh -n files/etc/uci-defaults/99-expand-data
+          sh -n scripts/automount/m28c-automount
+          sh -n scripts/automount/05-m28c-automount
+          sh -n scripts/automount/m28c-automount.init
+          sh -n patches/docker/files/m28c-docker.sh
+          sh -n patches/docker/files/90-m28c-docker-nftables
       - name: Free runner disk space
         env:
           DEBIAN_FRONTEND: noninteractive

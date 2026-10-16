@@ -1,0 +1,187 @@
+#!/bin/sh
+# M28C_REMOVABLE_AUTOMOUNT_V1
+# Data filesystems only. Never format, repair, force-unmount or change fstab.
+
+log() { logger -t m28c-automount -- "$*"; }
+block_device() { [ -b "/dev/$1" ]; }
+valid_name() {
+  case "$1" in ''|*[!a-z0-9]*) return 1 ;; esac
+  case "$1" in sd[a-z]*|mmcblk[0-9]*) return 0 ;; *) return 1 ;; esac
+}
+disk_of() {
+  local p
+  p=$(readlink -f "/sys/class/block/$1") || return 1
+  [ -d "$p" ] || return 1
+  if [ -f "$p/partition" ]; then p=${p%/*}; fi
+  basename "$p"
+}
+mount_disk() {
+  local id p
+  id=$(awk -v t="$1" '$5==t { n++; id=$3 } END { if(n==1) print id }' /proc/self/mountinfo)
+  [ -n "$id" ] || return 1
+  p=$(readlink -f "/sys/dev/block/$id") || return 1
+  disk_of "${p##*/}"
+}
+external_disk() {
+  local disk=$1 path type
+  path=$(readlink -f "/sys/class/block/$disk") || return 1
+  case "$path" in */usb[0-9]*/*) return 0 ;; esac
+  type=$(cat "/sys/class/block/$disk/device/type" 2>/dev/null) || type=
+  [ "$type" = SD ] && [ "$(cat "/sys/class/block/$disk/removable" 2>/dev/null)" = 1 ]
+}
+safe_disk() {
+  local disk=$1 system opt target actual
+  system=$(mount_disk /rom) || system=$(mount_disk /) || {
+    log 'cannot resolve system disk; leaving removable storage untouched'; return 1;
+  }
+  [ "$disk" != "$system" ] || return 1
+  for target in / /rom /overlay /opt; do
+    actual=$(mount_disk "$target") || continue
+    [ "$disk" != "$actual" ] || return 1
+  done
+  external_disk "$disk"
+}
+partition_children() {
+  local entry
+  for entry in /sys/class/block/*; do
+    [ -f "$entry/partition" ] || continue
+    [ "$(disk_of "${entry##*/}")" != "$1" ] || return 0
+  done
+  return 1
+}
+metadata() {
+  # Read fields independently: block info does not escape quotes in labels.
+  fs=$(blkid -p -s TYPE -o value "/dev/$name" 2>/dev/null) || return 1
+  uuid=$(blkid -p -s UUID -o value "/dev/$name" 2>/dev/null) || return 1
+  label=$(blkid -p -s LABEL -o value "/dev/$name" 2>/dev/null) || label=
+  case "$fs" in ext2|ext3|ext4|f2fs|btrfs|vfat|exfat|ntfs) ;; *) return 1 ;; esac
+  case "$uuid" in ''|*[!a-zA-Z0-9-]*) return 1 ;; esac
+  case "$label" in kernel|boot|rootfs|rootfs_data) return 1 ;; esac
+  # Cloned media can share UUIDs. Such ambiguity requires explicit inspection.
+  [ "$(blkid -c /dev/null -t "UUID=$uuid" -o device 2>/dev/null | wc -l)" -eq 1 ]
+}
+reserved_section() {
+  local section=$1 cfg_uuid cfg_label cfg_device
+  config_get cfg_uuid "$section" uuid
+  config_get cfg_label "$section" label
+  config_get cfg_device "$section" device
+  # Read every section, including enabled=0: a disabled mount is intentional.
+  if { [ -n "$cfg_uuid" ] && [ "$(printf '%s' "$cfg_uuid" | tr A-Z a-z)" = "$(printf '%s' "$uuid" | tr A-Z a-z)" ]; } ||
+     { [ -n "$cfg_label" ] && [ "$cfg_label" = "$label" ]; } ||
+     { [ -n "$cfg_device" ] && { [ "${cfg_device##*/}" = "$name" ] || [ "$(readlink -f "$cfg_device")" = "/dev/$name" ]; }; }; then
+    reserved=1
+  fi
+}
+global_section() {
+  local value
+  config_get_bool value "$1" auto_mount 1
+  [ "$value" = 1 ] || automatic=0
+}
+configured() {
+  reserved=0
+  automatic=1
+  config_load fstab || return 0
+  config_foreach global_section global
+  config_foreach reserved_section mount
+  config_foreach reserved_section swap
+  [ "$reserved" = 1 ] || [ "$automatic" = 0 ]
+}
+mounted_id() {
+  awk -v id="$1" '$3==id { found=1 } END { exit !found }' /proc/self/mountinfo
+}
+safe_directory() {
+  local entry=$1
+  [ ! -L "$entry" ] || return 1
+  if [ -e "$entry" ]; then [ -d "$entry" ] || return 1; else mkdir "$entry" || return 1; fi
+}
+empty_target() {
+  local child
+  for child in "$1"/* "$1"/.[!.]* "$1"/..?*; do
+    [ ! -e "$child" ] && [ ! -L "$child" ] || return 1
+  done
+}
+state_init() {
+  state=/var/run/m28c-automount
+  [ ! -L "$state" ] || return 1
+  mkdir -p "$state" || return 1
+  chmod 700 "$state" || return 1
+}
+owns() {
+  valid_name "$1" && [ -f "/var/run/m28c-automount/$1" ] && [ ! -L "/var/run/m28c-automount/$1" ]
+}
+lock_acquire() {
+  local tries=0 owner
+  while ! mkdir "$state/lock" 2>/dev/null; do
+    tries=$((tries + 1))
+    [ "$tries" -le 30 ] || { log 'mount worker busy; event left untouched'; return 1; }
+    owner=$(cat "$state/lock/pid" 2>/dev/null) || owner=
+    case "$owner" in ''|*[!0-9]*) ;; *)
+      if ! kill -0 "$owner" 2>/dev/null; then
+        rm -f "$state/lock/pid"
+        rmdir "$state/lock" 2>/dev/null || true
+      fi ;;
+    esac
+    sleep 1
+  done
+  printf '%s\n' "$$" > "$state/lock/pid"
+  trap 'rm -f "$state/lock/pid"; rmdir "$state/lock" 2>/dev/null' EXIT
+  trap 'exit 1' INT TERM HUP
+}
+add_device() {
+  local name=$1 disk fs uuid label reserved automatic id target current opts
+  valid_name "$name" && block_device "$name" || return 0
+  disk=$(disk_of "$name") || return 0
+  safe_disk "$disk" || return 0
+  if [ "$name" = "$disk" ] && partition_children "$disk"; then return 0; fi
+  metadata || return 0
+  configured && return 0
+  id=$(cat "/sys/class/block/$name/dev") || return 0
+  mounted_id "$id" && return 0
+  target="/mnt/removable/$name"
+  # Do not replace directories, links, existing mounts, or hidden user data.
+  safe_directory /mnt && safe_directory /mnt/removable && safe_directory "$target" || return 0
+  if ! empty_target "$target" || awk -v t="$target" '$5==t { found=1 } END { exit !found }' /proc/self/mountinfo; then
+    log "$name: target occupied; left untouched"; return 0
+  fi
+  [ ! -e "$state/$name" ] || { log "$name: previous ownership record remains; left untouched"; return 0; }
+  case "$fs" in ntfs) fs=ntfs3 ;; esac
+  opts=rw,noatime,nodev,nosuid
+  if mount -t "$fs" -o "$opts" "/dev/$name" "$target"; then
+    if awk -v id="$id" -v t="$target" '$3==id && $5==t && $4=="/" { found=1 } END { exit !found }' /proc/self/mountinfo; then
+      printf '%s %s %s\n' "$id" "$uuid" "$target" > "$state/$name"
+      log "$name mounted at $target"
+    else
+      log "$name: mount verification failed; inspect manually"
+    fi
+  else
+    log "$name: filesystem mount failed; no repair attempted"
+    rmdir "$target" 2>/dev/null || true
+  fi
+}
+remove_device() {
+  local name=$1 id uuid target extra mounted
+  owns "$name" || return 0
+  read -r id uuid target extra < "$state/$name" || return 1
+  [ -z "$extra" ] && [ "$target" = "/mnt/removable/$name" ] || return 1
+  case "$id" in *[!0-9:]*) return 1 ;; esac
+  mounted=$(awk -v t="$target" '$5==t { n++; id=$3; root=$4 } END { if(n==1) print id,root; else if(n>1) print "ambiguous" }' /proc/self/mountinfo)
+  if [ -n "$mounted" ]; then
+    [ "$mounted" = "$id /" ] || { log "$name: mount ownership changed; left untouched"; return 1; }
+    umount "$target" || { log "$name: busy mount retained; no forced detach"; return 1; }
+  fi
+  rm -f "$state/$name"
+  rmdir "$target" 2>/dev/null || true
+}
+main() {
+  local action=${1:-} name=${2:-} entry
+  if [ "$action" = owns ]; then owns "$name"; return; fi
+  case "$action" in add|remove) valid_name "$name" || return 0 ;; scan) ;; *) return 1 ;; esac
+  state_init && lock_acquire || return 1
+  . /lib/functions.sh
+  case "$action" in
+    add) add_device "$name" ;;
+    remove) remove_device "$name" ;;
+    scan) for entry in /sys/class/block/*; do add_device "${entry##*/}"; done ;;
+  esac
+}
+main "$@"

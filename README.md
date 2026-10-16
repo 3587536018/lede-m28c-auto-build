@@ -12,6 +12,8 @@
 - DockerMan 恢复刷机前的 Lua 0.5.13.20241008 界面；OpenClash 0.48.002 从固定源码编译，内置官方 Mihomo 1.19.32 ARM64 内核。
 - 软件源保留签名验证，补齐官方 24.10 公钥；同时交付同次编译的签名 IPK 归档。
 - Docker 数据目录 `/opt/docker`，512 MiB swap 只在数据分区正确挂载后创建。
+- Docker 默认使用原生 nftables，与 firewall4 配合处理容器出网、LAN 发布端口和 WAN 入站限制，避免生成旧版 iptables 规则；配置与限制见 `docs/DOCKER-FIREWALL.md`。
+- 插入 USB 存储或外置存储卡后自动挂载受支持的数据分区，保留已有挂载配置和卡内文件；系统盘、固件启动分区及 swap 不作为普通存储挂载，见 `docs/AUTOMOUNT.md`。
 
 ## 首次使用
 
@@ -45,12 +47,15 @@ GitHub Actions 支持手动、main 推送及北京时间每周五 02:00 定时�
 ```sh
 python3 -m unittest discover -s tests -p 'test_*.py' -v
 bash tests/expand-data-test.sh
+bash tests/automount-test.sh
 ```
 
 - `docs/DEVICE-2026-10-15.md`：实机环境与定制取舍。
 - `docs/device-inventory-2026-10-15.json`：604 个已安装包及筛选后的通用配置。
 - `docs/HANDOFF.md`：维护和验证入口。
 - `docs/QMODEM-USB-REBIND.md`：5G 槽位识别、配置保留和热插拔恢复。
+- `docs/DOCKER-FIREWALL.md`：Docker nftables、容器 DNS 和 firewall4 策略。
+- `docs/AUTOMOUNT.md`：外置存储自动挂载、显式 fstab 优先级和数据保护。
 - `package/UPSTREAM.md`：额外软件来源。
 
 首次启动脚本只会格式化本次明确新建且无文件系统签名的数据分区。遇到不明分区、挂载失败或已有未迁移文件会停止并保留脚本，供检查后重试。整卡刷写与保留配置升级是不同操作，不应依赖初始化脚本保护刷卡前的数据。

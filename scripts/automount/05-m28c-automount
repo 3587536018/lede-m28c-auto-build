@@ -1,0 +1,5 @@
+#!/bin/sh
+# M28C_REMOVABLE_AUTOMOUNT_V1: run before native block-mount.
+case "$ACTION" in
+  add|remove) /usr/libexec/m28c-automount "$ACTION" "${DEVNAME:-${DEVPATH##*/}}" ;;
+esac

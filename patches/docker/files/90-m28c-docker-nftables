@@ -1,0 +1,101 @@
+#!/bin/sh
+# Runs during first boot before firewall/dockerd. No service restart or flush.
+. /lib/functions.sh
+
+docker_find_zone() {
+	local zone_section=""
+	docker_check_zone() {
+		local name
+		config_get name "$1" name
+		[ "$name" = "$2" ] && zone_section="$1"
+	}
+	config_load firewall
+	config_foreach docker_check_zone zone "$1"
+	printf '%s\n' "$zone_section"
+}
+
+docker_firewall_defaults() {
+	local backend alternate device zone data_root
+	backend=$(uci -q get dockerd.globals.firewall_backend)
+	alternate=$(uci -q get dockerd.globals.alt_config_file)
+	# An existing explicit backend or alternate daemon file belongs to its user.
+	[ -z "$alternate" ] || return 0
+	case "$backend" in ''|nftables) ;; *) return 0 ;; esac
+	# UCI defaults run before fstab. A preserved data-root (including Swarm
+	# state) must be inspected only when dockerd starts after mount services.
+	if [ -z "$backend" ] && [ "${1-}" != --after-mounts ]; then
+		return 1
+	fi
+	. /usr/libexec/m28c-docker.sh
+	config_load dockerd
+	m28c_docker_validate_policy || return 1
+	# A preserved old config can be migrated only when its known default
+	# network policy still applies. Never invent missing user zone names.
+	[ -n "$(docker_find_zone lan)" ] && [ -n "$(docker_find_zone wan)" ] || {
+		logger -t dockerd-init "LAN/WAN zones missing; configure Docker fw4 policy before selecting nftables"
+		return 1
+	}
+	if [ -z "$backend" ]; then
+		data_root=$(uci -q get dockerd.globals.data_root)
+		[ -n "$data_root" ] || data_root=/opt/docker
+		if [ -d "$data_root/swarm" ] && [ -n "$(find "$data_root/swarm" -mindepth 1 -print -quit 2>/dev/null)" ]; then
+			logger -t dockerd-init "Existing Swarm state preserved; select a supported Docker firewall backend explicitly"
+			return 1
+		fi
+	fi
+
+	device=$(uci -q get network.docker.device)
+	if uci -q get network.docker >/dev/null; then
+		[ "$(uci -q get network.docker)" = interface ] && [ "$device" = docker0 ] || {
+			logger -t dockerd-init "Custom network.docker preserved; configure its nftables policy manually"
+			return 1
+		}
+	else
+		uci set network.docker=interface &&
+		uci set network.docker.device=docker0 &&
+		uci set network.docker.proto=none &&
+		uci set network.docker.auto=0 || return 1
+		uci commit network || return 1
+	fi
+	zone=$(docker_find_zone docker)
+	if [ -z "$zone" ]; then
+		# A conflicting named user section is not ours to replace.
+		uci -q get firewall.docker >/dev/null && return 1
+		uci set firewall.docker=zone &&
+		uci set firewall.docker.name=docker &&
+		uci set firewall.docker.input=ACCEPT &&
+		uci set firewall.docker.output=ACCEPT &&
+		uci set firewall.docker.forward=ACCEPT &&
+		uci add_list firewall.docker.network=docker || return 1
+	fi
+
+	# Preserve existing managed sections, including user edits and disabled rules.
+	if ! uci -q get firewall.m28c_docker_wan_guard >/dev/null; then
+		uci set firewall.m28c_docker_wan_guard=rule &&
+		uci set firewall.m28c_docker_wan_guard.name='M28C Docker WAN guard' &&
+		uci set firewall.m28c_docker_wan_guard.src=wan &&
+		uci set firewall.m28c_docker_wan_guard.dest=docker &&
+		uci set firewall.m28c_docker_wan_guard.proto=all &&
+		uci set firewall.m28c_docker_wan_guard.target=REJECT || return 1
+	fi
+	if ! uci -q get firewall.m28c_docker_to_wan >/dev/null; then
+		uci set firewall.m28c_docker_to_wan=forwarding &&
+		uci set firewall.m28c_docker_to_wan.src=docker &&
+		uci set firewall.m28c_docker_to_wan.dest=wan || return 1
+	fi
+	if ! uci -q get firewall.m28c_docker_lan_published >/dev/null; then
+		uci set firewall.m28c_docker_lan_published=include &&
+		uci set firewall.m28c_docker_lan_published.type=nftables &&
+		uci set firewall.m28c_docker_lan_published.path=/etc/docker/fw4-lan-published.nft &&
+		uci set firewall.m28c_docker_lan_published.position=chain-prepend &&
+		uci set firewall.m28c_docker_lan_published.chain=forward_lan || return 1
+	fi
+	uci commit firewall || return 1
+	# Commit the backend last: any policy failure leaves the old backend intact.
+	if [ -z "$backend" ]; then
+		uci set dockerd.globals.firewall_backend=nftables && uci commit dockerd || return 1
+	fi
+	return 0
+}
+
+docker_firewall_defaults "${1-}"

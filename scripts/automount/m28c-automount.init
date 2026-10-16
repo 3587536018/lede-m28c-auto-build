@@ -1,0 +1,6 @@
+#!/bin/sh /etc/rc.common
+# M28C_REMOVABLE_AUTOMOUNT_V1: coldplug after system storage initialization.
+START=95
+boot() { /usr/libexec/m28c-automount scan; }
+start() { /usr/libexec/m28c-automount scan; }
+stop() { :; }

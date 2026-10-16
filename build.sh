@@ -68,6 +68,8 @@ python3 "$ROOT_DIR/scripts/prepare-openclash-core.py" "$ROOT_DIR/lede"
 python3 "$ROOT_DIR/scripts/customize-public.py" "$ROOT_DIR/lede"
 python3 "$ROOT_DIR/scripts/customize-ui.py" "$ROOT_DIR/lede"
 python3 "$ROOT_DIR/scripts/customize-qmodem.py" "$ROOT_DIR/lede"
+python3 "$ROOT_DIR/scripts/customize-docker.py" "$ROOT_DIR/lede"
+python3 "$ROOT_DIR/scripts/customize-automount.py" "$ROOT_DIR/lede"
 # Catch scanner integration errors before starting the cross-toolchain build.
 cc -fsyntax-only -std=c99 -D_GNU_SOURCE -Wall -Wextra \
     feeds/qmodem/application/modem_scan/src/modem_scand.c
@@ -128,6 +130,7 @@ fi
 
 image_dir=bin/targets/rockchip/armv8
 image_base=openwrt-rockchip-armv8-widora_mangopi-m28c
+python3 "$ROOT_DIR/scripts/verify-runtime-customizations.py" "$ROOT_DIR/lede"
 if [ ! -s "$image_dir/$image_base-ext4-sysupgrade.img.gz" ] || [ ! -s "$image_dir/$image_base-squashfs-sysupgrade.img.gz" ]; then
     echo "Missing image after make; retrying the image target"
     make V=0 -j2 image 2>&1 | tee -a /tmp/build.log

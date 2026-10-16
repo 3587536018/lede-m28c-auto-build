@@ -30,6 +30,16 @@ redis-cli
 openssh-server
 openssh-sftp-server
 block-mount
+automount
+mount-utils
+kmod-usb-storage
+kmod-usb-storage-uas
+kmod-fs-ext4
+kmod-fs-exfat
+kmod-fs-vfat
+kmod-fs-ntfs3
+firewall4
+nftables-json
 e2fsprogs
 blkid
 blockdev

@@ -1,0 +1,2 @@
+# Default Docker bridge: LAN clients may reach explicitly published ports.
+oifname "docker0" ct status dnat counter accept comment "M28C LAN Docker published ports"

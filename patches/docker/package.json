@@ -1,0 +1,92 @@
+{
+  "repository": "https://github.com/coolsnowwolf/packages",
+  "revision": "bcc1adfa10c98e5183785d015e4d50ef98f04ab3",
+  "package": "utils/dockerd",
+  "files": [
+    {
+      "path": "files/dockerd.init",
+      "sha256": "36573a8260be9392a9adc1e19a5874480a133681bcfcf08b41a214d2ffbad49b",
+      "patched_sha256": "bea309fbde0aa71e59c5614c6fa097d1310732b9789bfc601a1ab1ec813aa2d0",
+      "replacements": [
+        {
+          "old": "\tlocal alt_config_file data_root log_level iptables ip6tables bip\n",
+          "new": "\tlocal alt_config_file data_root log_level iptables ip6tables bip firewall_backend dns_fallback\n"
+        },
+        {
+          "old": "\tconfig_get_bool ip6tables globals ip6tables \"0\"\n",
+          "new": "\tconfig_get_bool ip6tables globals ip6tables \"0\"\n\tconfig_get firewall_backend globals firewall_backend \"\"\n"
+        },
+        {
+          "old": "\tconfig_get storage_driver globals storage_driver \"\"\n",
+          "new": "\tconfig_get storage_driver globals storage_driver \"\"\n\n\tif [ \"${firewall_backend}\" = \"nftables\" ]; then\n\t\t. /usr/libexec/m28c-docker.sh\n\t\tm28c_docker_validate_policy || return 1\n\t\t[ -n \"${dns}\" ] || dns_fallback=$(m28c_docker_default_dns \"${bip}\")\n\tfi\n"
+        },
+        {
+          "old": "\tjson_add_boolean \"ip6tables\" \"${ip6tables}\"\n",
+          "new": "\tjson_add_boolean \"ip6tables\" \"${ip6tables}\"\n\t[ -z \"${firewall_backend}\" ] || json_add_string \"firewall-backend\" \"${firewall_backend}\"\n"
+        },
+        {
+          "old": "\t[ -z \"${dns}\" ] || json_close_array\n",
+          "new": "\t[ -z \"${dns}\" ] || json_close_array\n\tif [ -n \"${dns_fallback}\" ]; then\n\t\tjson_add_array \"dns\"\n\t\tjson_add_string \"\" \"${dns_fallback}\"\n\t\tjson_close_array\n\tfi\n"
+        },
+        {
+          "old": "\t[ \"${iptables}\" -eq \"1\" ] && config_foreach iptables_add_blocking_rule firewall\n",
+          "new": "\t# Native nftables uses the explicit default bridge policies in fw4.\n\tif [ \"${iptables}\" -eq \"1\" ] && [ \"${firewall_backend}\" != \"nftables\" ]; then\n\t\tconfig_foreach iptables_add_blocking_rule firewall\n\tfi\n\treturn 0\n"
+        },
+        {
+          "old": "\tprocess_config\n\n\tprocd_open_instance",
+          "new": "\tprocess_config || return $?\n\n\tprocd_open_instance"
+        },
+        {
+          "old": "reload_service() {\n\tprocess_config\n",
+          "new": "reload_service() {\n\tprocess_config || return $?\n"
+        },
+        {
+          "old": "boot() {\n\tuciadd",
+          "new": "m28c_docker_finish_defaults() {\n\tlocal defaults=/etc/uci-defaults/90-m28c-docker-nftables\n\t[ -f \"$defaults\" ] || return 0\n\t/bin/sh \"$defaults\" --after-mounts || return 1\n\t# Load the WAN guard before any retained containers can restart.\n\t# This runs once after fstab; ordinary starts do not reload firewall4.\n\tfw4 check && fw4 reload || return 1\n\trm -f \"$defaults\" || return 1\n}\n\nboot() {\n\tm28c_docker_finish_defaults || return $?\n\tuciadd"
+        },
+        {
+          "old": "\tlocal nofile=$(cat /proc/sys/fs/nr_open)\n\n\tprocess_config || return $?",
+          "new": "\tlocal nofile=$(cat /proc/sys/fs/nr_open)\n\n\tm28c_docker_finish_defaults || return $?\n\tprocess_config || return $?"
+        }
+      ]
+    },
+    {
+      "path": "files/etc/config/dockerd",
+      "sha256": "02554bdfba95523261fc214a0a992b192ef4879ebdacbb5072635a77dfa567d0",
+      "patched_sha256": "1ed3e3e7d5a417be564ad035805f233072f1e9caeb5d5375e6b3bbc49106791e",
+      "replacements": [
+        {
+          "old": "\toption iptables '1'\n",
+          "new": "\toption iptables '1'\n\toption firewall_backend 'nftables'\n"
+        },
+        {
+          "old": "# Docker doesn't work well out of the box with fw4. This is because Docker relies on a compatibility layer that\n# naively translates iptables rules. For the best compatibility replace the following dependencies:\n# `firewall4` -> `firewall`\n# `iptables-nft` -> `iptables-zz-legacy`\n# `ip6tables-nft` -> `ip6tables-zz-legacy`\n\n# Docker undermines the fw3 rules. By default all external source IPs are allowed to connect to the Docker host.\n# See https://docs.docker.com/network/iptables/ for more details.\n\n# firewall config changes are only additive i.e firewall will need to be restarted first to clear old changes,\n# then docker restarted to load in new changes.\n",
+          "new": "# Docker 29 native nftables uses firewall4 policy for the default docker0 bridge.\n# WAN blocking, outbound forwarding and LAN published ports are installed once.\n# Adjust these policies in firewall4; custom legacy extra_iptables_args and\n# blocked interfaces other than wan are rejected until explicitly migrated.\n# An explicit globals.dns list is preserved; otherwise use the router DNS.\n"
+        }
+      ]
+    },
+    {
+      "path": "Makefile",
+      "sha256": "44aea8585e78623c5904e408c7281eb37d048f55c5eb2a4e4b5b294fd46c39e7",
+      "patched_sha256": "dcba1e18ca65d3490e610d6413a4151e9a9e01246b7494995bf6da3f0e50b05f",
+      "replacements": [
+        {
+          "old": "PKG_RELEASE:=1\n",
+          "new": "PKG_RELEASE:=1.m28c1\n"
+        },
+        {
+          "old": "    +containerd \\\n",
+          "new": "    +containerd \\\n    +firewall4 \\\n"
+        },
+        {
+          "old": "define Package/dockerd/conffiles\n/etc/config/dockerd\nendef",
+          "new": "define Package/dockerd/conffiles\n/etc/config/dockerd\n/etc/docker/fw4-lan-published.nft\nendef"
+        },
+        {
+          "old": "\t$(INSTALL_BIN) ./files/dockerd.init $(1)/etc/init.d/dockerd\n",
+          "new": "\t$(INSTALL_BIN) ./files/dockerd.init $(1)/etc/init.d/dockerd\n\n\t$(INSTALL_DIR) $(1)/usr/libexec $(1)/etc/docker $(1)/etc/uci-defaults\n\t$(INSTALL_DATA) ./files/m28c-docker.sh $(1)/usr/libexec/m28c-docker.sh\n\t$(INSTALL_DATA) ./files/fw4-lan-published.nft $(1)/etc/docker/fw4-lan-published.nft\n\t$(INSTALL_BIN) ./files/90-m28c-docker-nftables $(1)/etc/uci-defaults/90-m28c-docker-nftables\n"
+        }
+      ]
+    }
+  ]
+}

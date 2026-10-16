@@ -18,7 +18,10 @@
 - `package/luci-app-m28c`：基于 LuCI RPC 的中文首页和响应式样式。
 - `scripts/customize-ui.py`：iStore 控制器的严格、幂等语言补丁。修复商店及 taskd 的原生 LMO 语言别名漏编问题；必须验收 `iStore.zh-cn.lmo` 和 `lib-tasks.zh-cn.lmo` 的实际词条。
 - `scripts/customize-qmodem.py` 与 `patches/qmodem/`：固定物理 USB 接口身份、槽位变更后复用 UCI 段，以及拨号/监控进程重新绑定。完整说明见 `docs/QMODEM-USB-REBIND.md`。升级 QModem 时补丁哈希不匹配会停止构建。
+- `scripts/customize-docker.py` 与 `patches/docker/`：将 Docker 原生 nftables、容器 DNS 选择和 fw4 默认策略纳入锁定 dockerd 软件包，保留普通 UCI 配置路径。见 `docs/DOCKER-FIREWALL.md`。
+- `scripts/customize-automount.py` 与 `scripts/automount/`：替换旧的匿名热插拔脚本，对外置数据分区执行受控挂载；显式 fstab 优先，保护系统盘和已有目录内容。见 `docs/AUTOMOUNT.md`。
 - `scripts/verify-firmware.py`：只读检查 gzip 压缩数据与 fwtool 升级元数据的完整性、CRC 和目标设备；构建和最终下载验收使用同一校验器。
+- `scripts/verify-runtime-customizations.py`：编译后核对实际 `root-rockchip` 中 Docker 和热插拔文件的完整字节、必要执行权限、开机扫描链接及旧挂载脚本缺失，漏装或被 overlay 覆盖时拒绝交付。
 - `.github/workflows/build.yml`：Ubuntu22.04、下载缓存、固件及失败日志 artifact、唯一Release标签。
 
 ## 默认访问
