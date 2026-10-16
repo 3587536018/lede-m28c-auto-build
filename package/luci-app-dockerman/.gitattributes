@@ -1,0 +1,3 @@
+* text eol=lf
+# Preserve the pinned upstream source, including its one trailing-space line.
+luasrc/model/cbi/dockerman/volumes.lua whitespace=-blank-at-eol

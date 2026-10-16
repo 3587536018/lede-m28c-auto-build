@@ -1,0 +1,444 @@
+{
+  "repository": "https://github.com/immortalwrt/luci",
+  "revision": "af8a35c38a548a5319349e3ff8ff70820bb0a4b3",
+  "source_directory": "applications/luci-app-dockerman",
+  "files": [
+    {
+      "path": "LICENSE",
+      "upstream_path": "LICENSE",
+      "git_blob_sha1": "f49a4e16e68b128803cc2dcea614603632b04eac",
+      "modified": false
+    },
+    {
+      "path": "NOTICE",
+      "upstream_path": "NOTICE",
+      "git_blob_sha1": "47e19692130f6fe5b5421a531e1f0a843bee2c49",
+      "modified": false
+    },
+    {
+      "path": "Makefile",
+      "upstream_path": "applications/luci-app-dockerman/Makefile",
+      "git_blob_sha1": "69b62c162cac7fa901fef41e24918c039d95919a",
+      "modified": true
+    },
+    {
+      "path": "htdocs/luci-static/resources/dockerman/containers.svg",
+      "upstream_path": "applications/luci-app-dockerman/htdocs/luci-static/resources/dockerman/containers.svg",
+      "git_blob_sha1": "4165f90bdc35e17a06ed69860eccd767c2761679",
+      "modified": false
+    },
+    {
+      "path": "htdocs/luci-static/resources/dockerman/images.svg",
+      "upstream_path": "applications/luci-app-dockerman/htdocs/luci-static/resources/dockerman/images.svg",
+      "git_blob_sha1": "90ca5a1c7d17f3b35b00e16792dc3b4b340f646e",
+      "modified": false
+    },
+    {
+      "path": "htdocs/luci-static/resources/dockerman/networks.svg",
+      "upstream_path": "applications/luci-app-dockerman/htdocs/luci-static/resources/dockerman/networks.svg",
+      "git_blob_sha1": "3eb12a39365bb067322a4c29802237662258694b",
+      "modified": false
+    },
+    {
+      "path": "htdocs/luci-static/resources/dockerman/volumes.svg",
+      "upstream_path": "applications/luci-app-dockerman/htdocs/luci-static/resources/dockerman/volumes.svg",
+      "git_blob_sha1": "50292a20259531f7fc1a053417e368b9bde8d8aa",
+      "modified": false
+    },
+    {
+      "path": "luasrc/controller/dockerman.lua",
+      "upstream_path": "applications/luci-app-dockerman/luasrc/controller/dockerman.lua",
+      "git_blob_sha1": "ac0668b073467177ea73dcbe8270ce29e498460f",
+      "modified": false
+    },
+    {
+      "path": "luasrc/model/cbi/dockerman/configuration.lua",
+      "upstream_path": "applications/luci-app-dockerman/luasrc/model/cbi/dockerman/configuration.lua",
+      "git_blob_sha1": "6fd831d370c619d5649866901e9f0cdc64f2e05c",
+      "modified": false
+    },
+    {
+      "path": "luasrc/model/cbi/dockerman/container.lua",
+      "upstream_path": "applications/luci-app-dockerman/luasrc/model/cbi/dockerman/container.lua",
+      "git_blob_sha1": "5caad4f93fd510d4cbcc31dde6be51302081e333",
+      "modified": false
+    },
+    {
+      "path": "luasrc/model/cbi/dockerman/containers.lua",
+      "upstream_path": "applications/luci-app-dockerman/luasrc/model/cbi/dockerman/containers.lua",
+      "git_blob_sha1": "a48118ec0c7d3f0fb5d7a416b1ee81906cb0ddb6",
+      "modified": false
+    },
+    {
+      "path": "luasrc/model/cbi/dockerman/images.lua",
+      "upstream_path": "applications/luci-app-dockerman/luasrc/model/cbi/dockerman/images.lua",
+      "git_blob_sha1": "2b84de3b8f950a9d47e29774d69ccc6852782a23",
+      "modified": false
+    },
+    {
+      "path": "luasrc/model/cbi/dockerman/networks.lua",
+      "upstream_path": "applications/luci-app-dockerman/luasrc/model/cbi/dockerman/networks.lua",
+      "git_blob_sha1": "f54acbd16d31af3bfb2edf675d734b05c0e281ed",
+      "modified": false
+    },
+    {
+      "path": "luasrc/model/cbi/dockerman/newcontainer.lua",
+      "upstream_path": "applications/luci-app-dockerman/luasrc/model/cbi/dockerman/newcontainer.lua",
+      "git_blob_sha1": "5d38a352e0dbf5f0103a99e9e9f95b9be96a5f2a",
+      "modified": false
+    },
+    {
+      "path": "luasrc/model/cbi/dockerman/newnetwork.lua",
+      "upstream_path": "applications/luci-app-dockerman/luasrc/model/cbi/dockerman/newnetwork.lua",
+      "git_blob_sha1": "a9cd67e1a10ef8167af3e40a80fd5791c6613099",
+      "modified": false
+    },
+    {
+      "path": "luasrc/model/cbi/dockerman/overview.lua",
+      "upstream_path": "applications/luci-app-dockerman/luasrc/model/cbi/dockerman/overview.lua",
+      "git_blob_sha1": "0506670cdbae09551d6000c8a4257bc0778a6550",
+      "modified": false
+    },
+    {
+      "path": "luasrc/model/cbi/dockerman/volumes.lua",
+      "upstream_path": "applications/luci-app-dockerman/luasrc/model/cbi/dockerman/volumes.lua",
+      "git_blob_sha1": "5fbd55f7b5b64dde990e5219d6a57c5ae9b76c87",
+      "modified": false
+    },
+    {
+      "path": "luasrc/model/docker.lua",
+      "upstream_path": "applications/luci-app-dockerman/luasrc/model/docker.lua",
+      "git_blob_sha1": "a0c74c0e4115b0921352ff68d6b718b7abe036e8",
+      "modified": false
+    },
+    {
+      "path": "luasrc/view/dockerman/apply_widget.htm",
+      "upstream_path": "applications/luci-app-dockerman/luasrc/view/dockerman/apply_widget.htm",
+      "git_blob_sha1": "b9ae1c6bdca366d0a082272a420c1dece1578d19",
+      "modified": false
+    },
+    {
+      "path": "luasrc/view/dockerman/cbi/inlinebutton.htm",
+      "upstream_path": "applications/luci-app-dockerman/luasrc/view/dockerman/cbi/inlinebutton.htm",
+      "git_blob_sha1": "a061a6dba64534dfd473a44c71858224f497fd76",
+      "modified": false
+    },
+    {
+      "path": "luasrc/view/dockerman/cbi/inlinevalue.htm",
+      "upstream_path": "applications/luci-app-dockerman/luasrc/view/dockerman/cbi/inlinevalue.htm",
+      "git_blob_sha1": "e4b0cf7a080bc253346201df8c9466efd6540bec",
+      "modified": false
+    },
+    {
+      "path": "luasrc/view/dockerman/cbi/namedsection.htm",
+      "upstream_path": "applications/luci-app-dockerman/luasrc/view/dockerman/cbi/namedsection.htm",
+      "git_blob_sha1": "244d2c10ad5464a8938a04ea4764bb9041fcd9e9",
+      "modified": false
+    },
+    {
+      "path": "luasrc/view/dockerman/cbi/xfvalue.htm",
+      "upstream_path": "applications/luci-app-dockerman/luasrc/view/dockerman/cbi/xfvalue.htm",
+      "git_blob_sha1": "04f7bc2ee865b729f6c43af7a60576ad8a2d8931",
+      "modified": false
+    },
+    {
+      "path": "luasrc/view/dockerman/container.htm",
+      "upstream_path": "applications/luci-app-dockerman/luasrc/view/dockerman/container.htm",
+      "git_blob_sha1": "f9b2f4344aabf7688feab7ed14c9461b1ab79466",
+      "modified": false
+    },
+    {
+      "path": "luasrc/view/dockerman/container_console.htm",
+      "upstream_path": "applications/luci-app-dockerman/luasrc/view/dockerman/container_console.htm",
+      "git_blob_sha1": "030acf74d185904c7c5fe5015e13d9150bf5f03d",
+      "modified": false
+    },
+    {
+      "path": "luasrc/view/dockerman/container_file.htm",
+      "upstream_path": "applications/luci-app-dockerman/luasrc/view/dockerman/container_file.htm",
+      "git_blob_sha1": "53f2c84f66d6153d592d314a5dd8685fa2386a4d",
+      "modified": false
+    },
+    {
+      "path": "luasrc/view/dockerman/container_stats.htm",
+      "upstream_path": "applications/luci-app-dockerman/luasrc/view/dockerman/container_stats.htm",
+      "git_blob_sha1": "28eaadab44a6f03fdb8161a243589e861d6774ad",
+      "modified": false
+    },
+    {
+      "path": "luasrc/view/dockerman/images_import.htm",
+      "upstream_path": "applications/luci-app-dockerman/luasrc/view/dockerman/images_import.htm",
+      "git_blob_sha1": "8c27eadb69ef4893a620d166f9ff2063dc81beaf",
+      "modified": false
+    },
+    {
+      "path": "luasrc/view/dockerman/images_load.htm",
+      "upstream_path": "applications/luci-app-dockerman/luasrc/view/dockerman/images_load.htm",
+      "git_blob_sha1": "1beb784cdaeb29789154bed316682002fde7b176",
+      "modified": false
+    },
+    {
+      "path": "luasrc/view/dockerman/logs.htm",
+      "upstream_path": "applications/luci-app-dockerman/luasrc/view/dockerman/logs.htm",
+      "git_blob_sha1": "c66637d890e9da1891a197eab36c594d4c60bce3",
+      "modified": false
+    },
+    {
+      "path": "luasrc/view/dockerman/newcontainer_resolve.htm",
+      "upstream_path": "applications/luci-app-dockerman/luasrc/view/dockerman/newcontainer_resolve.htm",
+      "git_blob_sha1": "abf9442e79b3b3bc35beb1cf34c6a6c796d677ad",
+      "modified": false
+    },
+    {
+      "path": "luasrc/view/dockerman/overview.htm",
+      "upstream_path": "applications/luci-app-dockerman/luasrc/view/dockerman/overview.htm",
+      "git_blob_sha1": "e491fc5126f3bf7f74cae45e900d824322797f35",
+      "modified": false
+    },
+    {
+      "path": "po/ar/dockerman.po",
+      "upstream_path": "applications/luci-app-dockerman/po/ar/dockerman.po",
+      "git_blob_sha1": "f82b4aefc0b58088435b877c23b25496da54a9e7",
+      "modified": false
+    },
+    {
+      "path": "po/bg/dockerman.po",
+      "upstream_path": "applications/luci-app-dockerman/po/bg/dockerman.po",
+      "git_blob_sha1": "60fa200e2138565a84ee9fe5e08d57e73b17795e",
+      "modified": false
+    },
+    {
+      "path": "po/bn_BD/dockerman.po",
+      "upstream_path": "applications/luci-app-dockerman/po/bn_BD/dockerman.po",
+      "git_blob_sha1": "decb5284519c8bde3dbe2cff6842864017ea777b",
+      "modified": false
+    },
+    {
+      "path": "po/ca/dockerman.po",
+      "upstream_path": "applications/luci-app-dockerman/po/ca/dockerman.po",
+      "git_blob_sha1": "e3ed08d6014923a3c9d8c262ff2c48287d458d86",
+      "modified": false
+    },
+    {
+      "path": "po/cs/dockerman.po",
+      "upstream_path": "applications/luci-app-dockerman/po/cs/dockerman.po",
+      "git_blob_sha1": "e273ebe8282f09ee6fa5816a85674d0335d763d3",
+      "modified": false
+    },
+    {
+      "path": "po/da/dockerman.po",
+      "upstream_path": "applications/luci-app-dockerman/po/da/dockerman.po",
+      "git_blob_sha1": "2f5bd2135d10d0cec3c0e156d535d11fb123afba",
+      "modified": false
+    },
+    {
+      "path": "po/de/dockerman.po",
+      "upstream_path": "applications/luci-app-dockerman/po/de/dockerman.po",
+      "git_blob_sha1": "cd9a51f0f64453fa2638ee9e198863f056adc134",
+      "modified": false
+    },
+    {
+      "path": "po/el/dockerman.po",
+      "upstream_path": "applications/luci-app-dockerman/po/el/dockerman.po",
+      "git_blob_sha1": "f888a6cff71740b16dfbca0f5015dc63a8e3f03d",
+      "modified": false
+    },
+    {
+      "path": "po/es/dockerman.po",
+      "upstream_path": "applications/luci-app-dockerman/po/es/dockerman.po",
+      "git_blob_sha1": "c367c02d24cfbdc3d85ac7e72bcc5245afa9d82f",
+      "modified": false
+    },
+    {
+      "path": "po/fa/dockerman.po",
+      "upstream_path": "applications/luci-app-dockerman/po/fa/dockerman.po",
+      "git_blob_sha1": "94f17da3de46228070d01c1fcbb6f32d9e201776",
+      "modified": false
+    },
+    {
+      "path": "po/fi/dockerman.po",
+      "upstream_path": "applications/luci-app-dockerman/po/fi/dockerman.po",
+      "git_blob_sha1": "e314b99aff4311b9924e14d45d597af091abc170",
+      "modified": false
+    },
+    {
+      "path": "po/fr/dockerman.po",
+      "upstream_path": "applications/luci-app-dockerman/po/fr/dockerman.po",
+      "git_blob_sha1": "4e9fe4c85ee8089bbb6701e6216d9364ac6d56d8",
+      "modified": false
+    },
+    {
+      "path": "po/ga/dockerman.po",
+      "upstream_path": "applications/luci-app-dockerman/po/ga/dockerman.po",
+      "git_blob_sha1": "2bb62102455b37905f44f02693abbd57dbb11ddb",
+      "modified": false
+    },
+    {
+      "path": "po/he/dockerman.po",
+      "upstream_path": "applications/luci-app-dockerman/po/he/dockerman.po",
+      "git_blob_sha1": "99ccae11c5876f580e18127fa3f00642fd8ca21b",
+      "modified": false
+    },
+    {
+      "path": "po/hi/dockerman.po",
+      "upstream_path": "applications/luci-app-dockerman/po/hi/dockerman.po",
+      "git_blob_sha1": "d00be59e12ce736522bf5b93f117b30e9b541f9e",
+      "modified": false
+    },
+    {
+      "path": "po/hu/dockerman.po",
+      "upstream_path": "applications/luci-app-dockerman/po/hu/dockerman.po",
+      "git_blob_sha1": "09000d57ab52f621a4c5fde8a72c733848f27301",
+      "modified": false
+    },
+    {
+      "path": "po/id/dockerman.po",
+      "upstream_path": "applications/luci-app-dockerman/po/id/dockerman.po",
+      "git_blob_sha1": "302f0624f49d01db88a3471d967dad8aa9c404c2",
+      "modified": false
+    },
+    {
+      "path": "po/it/dockerman.po",
+      "upstream_path": "applications/luci-app-dockerman/po/it/dockerman.po",
+      "git_blob_sha1": "95ba4bcc8c4d08a6ae9066f1f3c2450c3d02526b",
+      "modified": false
+    },
+    {
+      "path": "po/ja/dockerman.po",
+      "upstream_path": "applications/luci-app-dockerman/po/ja/dockerman.po",
+      "git_blob_sha1": "599a3d60148677f298e8ba7ccd72652e95108fd9",
+      "modified": false
+    },
+    {
+      "path": "po/ko/dockerman.po",
+      "upstream_path": "applications/luci-app-dockerman/po/ko/dockerman.po",
+      "git_blob_sha1": "bcea7e1fb7903caf292b34bdf45ba783be986c76",
+      "modified": false
+    },
+    {
+      "path": "po/lt/dockerman.po",
+      "upstream_path": "applications/luci-app-dockerman/po/lt/dockerman.po",
+      "git_blob_sha1": "3e03bb16437e9dc1d5ee53562fcab6e3b8877dbd",
+      "modified": false
+    },
+    {
+      "path": "po/mr/dockerman.po",
+      "upstream_path": "applications/luci-app-dockerman/po/mr/dockerman.po",
+      "git_blob_sha1": "5bd6e8d6ee2a62b3f914dc6bc84ffe32ded63ff6",
+      "modified": false
+    },
+    {
+      "path": "po/ms/dockerman.po",
+      "upstream_path": "applications/luci-app-dockerman/po/ms/dockerman.po",
+      "git_blob_sha1": "fd46e3b73f9444b97229db33c481c5a5a8090741",
+      "modified": false
+    },
+    {
+      "path": "po/nb_NO/dockerman.po",
+      "upstream_path": "applications/luci-app-dockerman/po/nb_NO/dockerman.po",
+      "git_blob_sha1": "818e7ed059b048c61a5f403ba6c761916791b151",
+      "modified": false
+    },
+    {
+      "path": "po/nl/dockerman.po",
+      "upstream_path": "applications/luci-app-dockerman/po/nl/dockerman.po",
+      "git_blob_sha1": "feff47706b72e2559a633c76967a2c11c8364b36",
+      "modified": false
+    },
+    {
+      "path": "po/pl/dockerman.po",
+      "upstream_path": "applications/luci-app-dockerman/po/pl/dockerman.po",
+      "git_blob_sha1": "7dabbd16b924a2280ba8dc59c02e228b1f6d73a2",
+      "modified": false
+    },
+    {
+      "path": "po/pt/dockerman.po",
+      "upstream_path": "applications/luci-app-dockerman/po/pt/dockerman.po",
+      "git_blob_sha1": "b366c834720291338737e92a0bde26cc71c00737",
+      "modified": false
+    },
+    {
+      "path": "po/pt_BR/dockerman.po",
+      "upstream_path": "applications/luci-app-dockerman/po/pt_BR/dockerman.po",
+      "git_blob_sha1": "8e4d351ab82c0433cc14d0130cc1830fc8ad103e",
+      "modified": false
+    },
+    {
+      "path": "po/ro/dockerman.po",
+      "upstream_path": "applications/luci-app-dockerman/po/ro/dockerman.po",
+      "git_blob_sha1": "b050c610ff3ef2892a195d3fa38dde53e8679e48",
+      "modified": false
+    },
+    {
+      "path": "po/ru/dockerman.po",
+      "upstream_path": "applications/luci-app-dockerman/po/ru/dockerman.po",
+      "git_blob_sha1": "f80439a27a6e722d1961272ce2f409a2a66f83e2",
+      "modified": false
+    },
+    {
+      "path": "po/sk/dockerman.po",
+      "upstream_path": "applications/luci-app-dockerman/po/sk/dockerman.po",
+      "git_blob_sha1": "4771c227b062f4ba0bf303e063cf231f2c27e726",
+      "modified": false
+    },
+    {
+      "path": "po/sv/dockerman.po",
+      "upstream_path": "applications/luci-app-dockerman/po/sv/dockerman.po",
+      "git_blob_sha1": "6562d712a2248a416b8695a556d5080e28144840",
+      "modified": false
+    },
+    {
+      "path": "po/templates/dockerman.pot",
+      "upstream_path": "applications/luci-app-dockerman/po/templates/dockerman.pot",
+      "git_blob_sha1": "f25955f2ac0b94c00bbeec4a1ceeb0b8d43d648a",
+      "modified": false
+    },
+    {
+      "path": "po/tr/dockerman.po",
+      "upstream_path": "applications/luci-app-dockerman/po/tr/dockerman.po",
+      "git_blob_sha1": "c8a51288592f448930c759a6e3b17490b7e48466",
+      "modified": false
+    },
+    {
+      "path": "po/uk/dockerman.po",
+      "upstream_path": "applications/luci-app-dockerman/po/uk/dockerman.po",
+      "git_blob_sha1": "a8dabcf297037758da524c218be05c6ca1ce3f59",
+      "modified": false
+    },
+    {
+      "path": "po/vi/dockerman.po",
+      "upstream_path": "applications/luci-app-dockerman/po/vi/dockerman.po",
+      "git_blob_sha1": "061ed828a41766ffc2488e5663b9408d6c33d397",
+      "modified": false
+    },
+    {
+      "path": "po/yua/dockerman.po",
+      "upstream_path": "applications/luci-app-dockerman/po/yua/dockerman.po",
+      "git_blob_sha1": "a4a2d0db596f9e2677c933007dcb4b6de58927a9",
+      "modified": false
+    },
+    {
+      "path": "po/zh_Hans/dockerman.po",
+      "upstream_path": "applications/luci-app-dockerman/po/zh_Hans/dockerman.po",
+      "git_blob_sha1": "200264cb1712a24502b6679c71da55701a60221c",
+      "modified": false
+    },
+    {
+      "path": "po/zh_Hant/dockerman.po",
+      "upstream_path": "applications/luci-app-dockerman/po/zh_Hant/dockerman.po",
+      "git_blob_sha1": "eaec693a1cadac1893cf600deafb1f1d18fee90f",
+      "modified": false
+    },
+    {
+      "path": "root/usr/share/rpcd/acl.d/luci-app-dockerman.json",
+      "upstream_path": "applications/luci-app-dockerman/root/usr/share/rpcd/acl.d/luci-app-dockerman.json",
+      "git_blob_sha1": "353ccaa16c17f8c4f3f11b7af7472e42a2044ce8",
+      "modified": false
+    }
+  ],
+  "license_text": {
+    "path": "COPYING",
+    "source": "https://raw.githubusercontent.com/spdx/license-list-data/v3.25.0/text/AGPL-3.0-only.txt",
+    "sha256": "d8a6cc31abc16b6748c7a21f21611f5a1ec33f67d22ca23d7da1c19b95496bee"
+  }
+}

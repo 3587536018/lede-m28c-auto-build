@@ -1,7 +1,9 @@
 #!/bin/sh
 # Keep the image root partition at 1 GiB. Reuse an existing ext4 /opt or an
 # opt/optdata partition; otherwise use only verified trailing unallocated space.
-# Never format an existing partition or copy Docker data automatically.
+# The Docker package installs an empty /opt/docker placeholder in the image.
+# Never hide existing data, format an existing partition or copy Docker data
+# automatically.
 # A nonzero exit keeps this uci-defaults script available for the next boot.
 
 set -u
@@ -226,8 +228,30 @@ configure_swap() {
     uci -q commit fstab || { fail "saving swap configuration failed"; return 1; }
 }
 
+verify_unmounted_opt() {
+  local entry child
+  [ ! -L /opt ] || { fail "/opt is a symlink; inspect it manually"; return 1; }
+  [ -e /opt ] || return 0
+  [ -d /opt ] || { fail "/opt is not a directory; leaving it untouched"; return 1; }
+  for entry in /opt/* /opt/.[!.]* /opt/..?*; do
+    [ -e "$entry" ] || [ -L "$entry" ] || continue
+    # Only the empty directory shipped by the Docker package is safe to hide.
+    # After Docker has started it may hold real data on the root overlay.
+    [ "$entry" = /opt/docker ] && [ -d "$entry" ] && [ ! -L "$entry" ] || {
+      fail "unmounted /opt contains data or unexpected entries; preserve them before retrying"
+      return 1
+    }
+    ls -A "$entry" >/dev/null || { fail "cannot inspect $entry"; return 1; }
+    for child in "$entry"/* "$entry"/.[!.]* "$entry"/..?*; do
+      [ -e "$child" ] || [ -L "$child" ] || continue
+      fail "$entry contains data; preserve it before retrying"
+      return 1
+    done
+  done
+}
+
 main() {
-  local info fstype root contents
+  local info fstype root
   if info=$(mounted_partition /opt); then
     # An already mounted data filesystem can be reused on ext4 installations
     # without /rom or a resolvable root= argument. Discovery is only mandatory
@@ -238,6 +262,8 @@ $info
 EOF
     verify_opt_mount || { fail "existing /opt is not a separate ext4 partition; leaving it untouched"; return 1; }
   else
+    # Reject root-overlay data before changing any partition geometry.
+    verify_unmounted_opt || return 1
     BOOT_PARTITION=$(find_boot_partition) || { fail "cannot identify the boot partition"; return 1; }
     DISK=$(partition_disk "$BOOT_PARTITION") || return 1
     [ -b "$DISK" ] || { fail "$DISK is not a block device"; return 1; }
@@ -246,10 +272,8 @@ EOF
       PART=$(create_data_partition) || return 1
     fi
     [ "$(filesystem_type "$PART")" = ext4 ] || { fail "$PART is not ext4; refusing to format an existing partition"; return 1; }
-    [ ! -L /opt ] || { fail "/opt is a symlink; inspect it manually"; return 1; }
     mkdir -p /opt || return 1
-    contents=$(ls -A /opt) || { fail "cannot inspect unmounted /opt"; return 1; }
-    [ -z "$contents" ] || { fail "unmounted /opt contains files; migrate them manually before retrying"; return 1; }
+    verify_unmounted_opt || return 1
     mount -t ext4 "$PART" /opt || { fail "mounting $PART at /opt failed"; return 1; }
     verify_opt_mount || { fail "/opt mount verification failed"; return 1; }
   fi

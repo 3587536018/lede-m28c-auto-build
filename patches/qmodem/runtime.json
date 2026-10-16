@@ -68,6 +68,21 @@
           "new": "        # Enumeration may change while this monitor is sleeping.\n        failed_binding=$MODEM_BINDING\n        update_cfg\n        if [ \"$failed_binding\" = \"$MODEM_BINDING\" ] && modem_binding_ready; then\n            run_actions\n        fi\n        failed_count=0\n"
         }
       ]
+    },
+    {
+      "path": "application/qmodem/files/usr/share/qmodem/generic.sh",
+      "sha256": "d5cec6ba54cf900056720d25a0889c558e1c3d865fcac98b6e42933746c41832",
+      "patched_sha256": "ba4e139b591bc56bc3e38514e966c29f20515bcb60895dcacea8c2b09d45771b",
+      "replacements": [
+        {
+          "old": "get_connect_status()\n{\n",
+          "new": "# QMI/QMAP bearers may be online while AT+CGACT? still reports inactive.\n# Accept only an addressed, up netifd interface physically belonging to this\n# modem. Never infer its state from an unrelated WAN or a cached interface name.\nm28c_netifd_connected()\n{\n    local modem_real devices device device_real\n    [ -n \"${modem_path:-}\" ] && [ -d \"$modem_path\" ] || return 1\n    modem_real=$(readlink -f \"$modem_path\") || return 1\n    case \"$modem_real\" in /sys/devices/*) ;; *) return 1 ;; esac\n    devices=$(ubus call network.interface dump 2>/dev/null | jq -r '\n        .interface[]? | select(.up == true) |\n        select(any(.\"ipv4-address\"[]?; .address != null and .address != \"\" and\n                   .address != \"0.0.0.0\" and (.address | startswith(\"169.254.\") | not)) or\n               any(.\"ipv6-address\"[]?; .address != null and .address != \"\" and\n                   .address != \"::\" and (.address | ascii_downcase | startswith(\"fe8\") or startswith(\"fe9\") or startswith(\"fea\") or startswith(\"feb\") | not))) |\n        .l3_device // .device // empty\n    ') || return 1\n    for device in $devices; do\n        case \"$device\" in ''|*[!a-zA-Z0-9_.:-]*) continue ;; esac\n        [ -d \"/sys/class/net/$device/device\" ] || continue\n        device_real=$(readlink -f \"/sys/class/net/$device/device\") || continue\n        case \"$device_real\" in \"$modem_real\"/*) return 0 ;; esac\n    done\n    return 1\n}\n\nget_connect_status()\n{\n"
+        },
+        {
+          "old": "    add_plain_info_entry \"connect_status\" \"$connect_status\" \"Connect Status\"",
+          "new": "    if [ \"$connect_status\" != \"Yes\" ] && m28c_netifd_connected; then\n        connect_status=\"Yes\"\n    fi\n    add_plain_info_entry \"connect_status\" \"$connect_status\" \"Connect Status\""
+        }
+      ]
     }
   ]
 }

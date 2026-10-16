@@ -20,20 +20,8 @@ if uci -q get argon.@global[0] >/dev/null; then
     uci set argon.@global[0].dark_primary='#35b9ad'
 fi
 
-# The owner enables Wi-Fi after choosing their own credentials. Preserve keys
-# already present when upgrading an existing installation.
-configure_wifi() {
-    local section="$1" key
-    config_get key "$section" key
-    [ -n "$key" ] && return 0
-    uci set "wireless.$section.ssid=M28C"
-    uci set "wireless.$section.encryption=sae-mixed"
-    uci set "wireless.$section.disabled=1"
-}
-if [ -f /etc/config/wireless ]; then
-    config_load wireless
-    config_foreach configure_wifi wifi-iface
-fi
+# New radios are generated as the open network "openwr" by mac80211.
+# Leave existing wireless sections untouched, including open guest networks.
 
 if [ -f /etc/config/cpufreq ]; then
     uci -q batch <<'EOF'

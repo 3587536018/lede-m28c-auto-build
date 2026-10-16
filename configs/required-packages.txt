@@ -5,6 +5,7 @@ luci-app-argon-config
 luci-app-store
 luci-app-dockerman
 luci-i18n-dockerman-zh-cn
+luci-lib-docker
 luci-app-homebox
 luci-i18n-homebox-zh-cn
 homebox
@@ -12,6 +13,7 @@ luci-app-ddns
 luci-app-ddns-go
 luci-app-vsftpd
 luci-app-openclash
+m28c-openclash-core
 luci-app-qmodem-next
 luci-app-qmodem-monitor
 luci-app-samba4

@@ -2,6 +2,7 @@ lede/
 .cache/
 artifacts/
 release_assets/
+package_assets/
 __pycache__/
 *.pyc
 build-diagnostics/

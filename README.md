@@ -5,17 +5,19 @@
 ## 定制内容
 
 - Argon 中文界面与新的 M28C 控制台：实时运行状态、存储容量、5G / 应用 / Docker / 文件共享 / 网络设置快捷入口，适配手机。
-- iStore 语言兼容补丁：显式加载翻译，统一 `zh_cn`、`zh-CN` 等语言格式，检查中文资源后再回退。
+- iStore 原生中文：修复 LuCI 构建语言别名，正确生成商店和任务弹窗的简体中文 LMO，保留主界面语言兼容补丁。
 - QModem、OpenClash、Docker / Compose / Dockerman、Homebox、DDNS / DDNS-Go、Samba、FTP、TurboACC、OpenSSH、常用诊断工具。
 - 5G USB 槽位自适应：按固定物理接口识别模块，重启后总线或串口编号变化时保留拨号设置，并刷新拨号进程与断线监控。适用范围与验证方式见 `docs/QMODEM-USB-REBIND.md`。
 - 1 GiB 根分区，ext4 与 squashfs 两种镜像；首次启动使用尾部空闲空间建立 `/opt`，或复用已有 `opt` / `optdata` 分区。
+- DockerMan 恢复刷机前的 Lua 0.5.13.20241008 界面；OpenClash 0.48.002 从固定源码编译，内置官方 Mihomo 1.19.32 ARM64 内核。
+- 软件源保留签名验证，补齐官方 24.10 公钥；同时交付同次编译的签名 IPK 归档。
 - Docker 数据目录 `/opt/docker`，512 MiB swap 只在数据分区正确挂载后创建。
 
 ## 首次使用
 
 1. 备份 TF 卡后，将 `*.img.gz` 解压并用 balenaEtcher 等工具写入 TF 卡。整卡刷写会覆盖卡上现有数据。
 2. 用网线连接，浏览器打开 `http://192.168.1.1`。用户名 `root`，固件没有预设密码，在 LuCI 中先设置管理密码。
-3. 设置自己的 Wi-Fi 名称、密码和地区，再启用无线。全新镜像的 Wi-Fi 默认关闭，SSH 不接受空密码。
+3. 全新镜像默认启用 Wi-Fi，名称为 `openwr`，开放网络、无密码。可在无线设置中自行修改；保留配置升级不会改写已有无线设置。SSH 不接受空密码。
 4. 在 QModem 中确认 modem；自行导入 OpenClash 订阅、DDNS 凭据，并配置共享目录后启用相应服务。
 
 固件不包含实机的密码、Wi-Fi 密钥、订阅、DDNS 令牌、SIM 标识、SSH 私钥或 `/opt` 运行数据。OpenClash、Samba、FTP、DDNS 默认等待用户配置。自建 m3u8 / WorkBuddy Hub 程序及其数据需独立迁移。
@@ -33,6 +35,8 @@ sudo ./install-env.sh
 构建前会检查锁定版本、必要软件包和公开默认设置，构建后验证两种镜像的 gzip 与软件 manifest。生成目录：`lede/bin/targets/rockchip/armv8/`。
 
 GitHub Actions 支持手动、main 推送及北京时间每周五 02:00 定时构建。定制开发分支只上传 Actions 固件产物，不修改现有 Release；main 自动构建成功后发布唯一的新标签。手动触发默认不发布，须明确选择 publish。
+
+默认额外上传 `m28c-matching-packages-构建号`，包含同次构建 IPK、索引、签名及公开构建密钥；内核模块只能使用与固件完全匹配的构建产物，具体见 `docs/PACKAGE-FEEDS.md`。
 
 下载源码缓存与工具链分离，工具链每次冷编译。`sources.lock.json` 记录全部 LEDE/feed 版本。升级版本时需更新锁文件并重新验证驱动；此前跟随 master 的构建因 Linux 6.18 移除 `hrtimer_init` 导致蜂窝驱动失败。
 

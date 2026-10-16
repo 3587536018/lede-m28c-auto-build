@@ -2,8 +2,9 @@
 """Apply a small, checked iStore language fix to an updated LEDE source tree.
 
 Run after feeds update/install: python3 scripts/customize-ui.py path/to/lede
-Only the language selector and menu caption are changed. Upstream drift aborts
-the build instead of silently producing an English first-install experience.
+Keep iStore's language selection and native LuCI translation packaging in sync.
+Upstream drift aborts before any file is changed instead of silently omitting
+the Simplified Chinese catalogs used by iStore and its task dialogs.
 """
 
 from __future__ import annotations
@@ -70,6 +71,19 @@ MENU_ENTRY = re.compile(
 )
 MENU_LABEL = '_("iStore 应用商店")'
 
+# Both upstream packages compile their catalogs inside src/Makefile instead of
+# using the top-level LuciTranslation package rule. The pinned luci.mk maps
+# po/zh-cn to the build tag zh_Hans, so the old direct lookup silently finds
+# nothing. Use the same source-directory and runtime-locale aliases as LuCI.
+CATALOG_MARKER = "M28C_NATIVE_CATALOG_ALIASES_V1"
+ORIGINAL_CATALOG_INSTALL = '''\t$(foreach lang,$(LUCI_LANGUAGES),$(foreach po,$(wildcard ${CURDIR}/po/$(lang)/*.po), \\
+\tpo2lmo $(po) \\
+\t\t$(DESTDIR)$(LUCI_LIBRARYDIR)/i18n/$(basename $(notdir $(po))).$(lang).lmo;))'''
+PATCHED_CATALOG_INSTALL = '''\t# M28C_NATIVE_CATALOG_ALIASES_V1: use LuCI's PO and runtime locale aliases.
+\t$(foreach lang,$(LUCI_LANGUAGES),$(foreach po,$(wildcard ${CURDIR}/po/$(call LuciPoDir,$(lang))/*.po), \\
+\tpo2lmo $(po) \\
+\t\t$(DESTDIR)$(LUCI_LIBRARYDIR)/i18n/$(basename $(notdir $(po))).$(firstword $(LUCI_LC_ALIAS.$(lang)) $(lang)).lmo;))'''
+
 
 class PatchError(RuntimeError):
     """The checked upstream code could not be safely modified."""
@@ -99,6 +113,20 @@ def patch_controller(source: str) -> str:
     return MENU_ENTRY.sub(lambda m: m.group(1) + '("iStore 应用商店")' + m.group(2), result, count=1)
 
 
+def patch_catalog_install(source: str) -> str:
+    if source.count("include $(TOPDIR)/feeds/luci/luci.mk") != 1:
+        raise PatchError("native catalog installer must include the pinned luci.mk once")
+    if CATALOG_MARKER in source:
+        if (source.count(CATALOG_MARKER) != 1
+                or source.count(PATCHED_CATALOG_INSTALL) != 1
+                or ORIGINAL_CATALOG_INSTALL in source):
+            raise PatchError("existing native catalog patch was changed; review before updating")
+        return source
+    if source.count(ORIGINAL_CATALOG_INSTALL) != 1:
+        raise PatchError("upstream native catalog install loop changed or is duplicated")
+    return source.replace(ORIGINAL_CATALOG_INSTALL, PATCHED_CATALOG_INSTALL, 1)
+
+
 def locate_controller(lede_root: Path) -> Path:
     feed = (lede_root / "feeds" / "istore").resolve()
     if not feed.is_dir():
@@ -118,12 +146,26 @@ def locate_controller(lede_root: Path) -> Path:
 
 def customize(lede_root: Path) -> tuple[Path, bool]:
     controller = locate_controller(lede_root)
-    source = controller.read_text(encoding="utf-8")
-    result = patch_controller(source)
-    if result != source:
-        with controller.open("w", encoding="utf-8", newline="\n") as output:
-            output.write(result)
-    return controller, result != source
+    feed = (lede_root / "feeds/istore").resolve()
+    store = controller.parents[2]
+    pending = [(controller, patch_controller(controller.read_text(encoding="utf-8")))]
+    for package, catalog in ((store, "iStore"), (store.parent / "luci-lib-taskd", "lib-tasks")):
+        installer = (package / "src/Makefile").resolve()
+        po = (package / "src/po/zh-cn" / (catalog + ".po")).resolve()
+        if (not installer.is_relative_to(feed) or not po.is_relative_to(feed)
+                or not installer.is_file() or not po.is_file() or not po.stat().st_size):
+            raise PatchError(f"missing or unsafe native Chinese catalog installer: {package.name}")
+        pending.append((installer, patch_catalog_install(installer.read_text(encoding="utf-8"))))
+
+    # Validate every input first: a taskd mismatch must not leave the controller
+    # or the store installer partially patched.
+    changed = False
+    for path, result in pending:
+        if path.read_text(encoding="utf-8") != result:
+            with path.open("w", encoding="utf-8", newline="\n") as output:
+                output.write(result)
+            changed = True
+    return controller, changed
 
 
 def main() -> int:
@@ -135,7 +177,8 @@ def main() -> int:
     except (OSError, UnicodeError, PatchError) as error:
         print(f"UI customization failed: {error}", file=sys.stderr)
         return 1
-    print(f"iStore Chinese UI: {'patched' if changed else 'already patched'} {path}")
+    print(f"iStore Chinese UI: {'patched' if changed else 'already patched'} {path}; "
+          "native iStore/taskd catalog aliases verified")
     return 0
 
 

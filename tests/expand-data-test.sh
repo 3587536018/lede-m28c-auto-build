@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Isolated regression tests: no block device, mount, UCI or swap is modified.
 set -eu
+# On Git Bash, start Bash with MSYS=winsymlinks:sys so ln -s creates a
+# shell-visible symlink instead of silently copying the target directory.
 
 repo=$(cd "$(dirname "$0")/.." && pwd)
 fixture=$(mktemp -d "${TMPDIR:-/tmp}/m28c-storage-test.XXXXXX")
@@ -199,6 +201,124 @@ pass 'repeated main runs reuse an existing /opt without creating or formatting p
   assert_equal "$(cat "$mutations")" $'configured-storage\nconfigured-swap'
 )
 pass 'an existing ext4 /opt is reused even when the boot partition cannot be identified'
+
+# The shipped image contains an empty /opt/docker directory before dockerd
+# starts. Exercise the full unmounted path with real, isolated directories;
+# function-only mocks previously missed this first-boot mountpoint conflict.
+mountpoint_case() (
+  local scenario=$1 expected=$2
+  local case_dir="$fixture/mountpoint-$scenario" opt_path
+  opt_path="$case_dir/opt"
+  command mkdir -p "$case_dir"
+  case "$scenario" in
+    absent) ;;
+    empty) command mkdir -p "$opt_path" ;;
+    docker-stub) command mkdir -p "$opt_path/docker" ;;
+    docker-data)
+      command mkdir -p "$opt_path/docker"
+      printf 'preserve existing Docker data\n' > "$opt_path/docker/state"
+      ;;
+    docker-newline-file)
+      command mkdir -p "$opt_path/docker"
+      printf 'preserve newline-named Docker data\n' > "$opt_path/docker/"$'\n'
+      ;;
+    docker-dangling-link)
+      command mkdir -p "$opt_path/docker"
+      ln -s "$case_dir/missing-target" "$opt_path/docker/broken-link"
+      [ -L "$opt_path/docker/broken-link" ] && [ ! -e "$opt_path/docker/broken-link" ] || {
+        printf 'FAIL: expected a dangling symlink; on Git Bash set MSYS=winsymlinks:sys before starting Bash\n' >&2
+        exit 1
+      }
+      ;;
+    opt-symlink)
+      command mkdir -p "$case_dir/existing-data"
+      ln -s "$case_dir/existing-data" "$opt_path"
+      [ -L "$opt_path" ] || { printf 'FAIL: ln -s did not create a symlink; on Git Bash set MSYS=winsymlinks:sys before starting Bash\n' >&2; exit 1; }
+      ;;
+    docker-symlink)
+      command mkdir -p "$opt_path" "$case_dir/existing-data"
+      ln -s "$case_dir/existing-data" "$opt_path/docker"
+      [ -L "$opt_path/docker" ] || { printf 'FAIL: ln -s did not create a symlink; on Git Bash set MSYS=winsymlinks:sys before starting Bash\n' >&2; exit 1; }
+      ;;
+    other-directory) command mkdir -p "$opt_path/containerd" ;;
+    hidden-file)
+      command mkdir -p "$opt_path"
+      printf 'preserve hidden data\n' > "$opt_path/.owner-data"
+      ;;
+    opt-file) printf 'preserve mountpoint file\n' > "$opt_path" ;;
+    *) printf 'Unknown mountpoint case: %s\n' "$scenario" >&2; exit 1 ;;
+  esac
+  sed -e '$d' -e "s|/sys/class/block|$fixture/sys|g" \
+    -e "s|/opt|$opt_path|g" \
+    "$repo/files/etc/uci-defaults/99-expand-data" > "$case_dir/library.sh"
+  source "$case_dir/library.sh"
+  : > "$mutations"
+
+  function [ {
+    if [[ "$*" == '-b /dev/mmcblk1 ]' ]]; then return 0; fi
+    builtin [ "$@"
+  }
+  mounted_partition() { return 1; }
+  find_boot_partition() { printf '/dev/mmcblk1p2\n'; }
+  partition_disk() { printf '/dev/mmcblk1\n'; }
+  find_labeled_partition() { return 0; }
+  create_data_partition() {
+    record_mutation create-partition
+    printf '/dev/mmcblk1p3\n'
+  }
+  filesystem_type() { printf 'ext4\n'; }
+  mkdir() {
+    [ "$*" = "-p $opt_path" ] || return 1
+    record_mutation mkdir-data
+    command mkdir -p "$opt_path"
+  }
+  mount() {
+    [ "$*" = "-t ext4 /dev/mmcblk1p3 $opt_path" ] || return 1
+    record_mutation mounted-data
+  }
+  verify_opt_mount() { command grep -qx mounted-data "$mutations"; }
+  configure_storage() { verify_opt_mount && record_mutation configured-storage; }
+  configure_swap() { verify_opt_mount && record_mutation configured-swap; }
+
+  if [ "$expected" = success ]; then
+    main >/dev/null
+    assert_equal "$(cat "$mutations")" $'create-partition\nmkdir-data\nmounted-data\nconfigured-storage\nconfigured-swap'
+  else
+    assert_failure main
+    # Reject unsafe mountpoints before even creating the partition. Existing
+    # files, symlinks and directories must remain untouched on rejection.
+    assert_equal "$(cat "$mutations")" ''
+    case "$scenario" in
+      docker-data) assert_equal "$(cat "$opt_path/docker/state")" 'preserve existing Docker data' ;;
+      docker-newline-file) assert_equal "$(cat "$opt_path/docker/"$'\n')" 'preserve newline-named Docker data' ;;
+      docker-dangling-link)
+        [ -L "$opt_path/docker/broken-link" ] && [ ! -e "$opt_path/docker/broken-link" ]
+        assert_equal "$(readlink "$opt_path/docker/broken-link")" "$case_dir/missing-target"
+        ;;
+      opt-symlink) [ -L "$opt_path" ] ;;
+      docker-symlink) [ -L "$opt_path/docker" ] ;;
+      other-directory) [ -d "$opt_path/containerd" ] ;;
+      hidden-file) assert_equal "$(cat "$opt_path/.owner-data")" 'preserve hidden data' ;;
+      opt-file) assert_equal "$(cat "$opt_path")" 'preserve mountpoint file' ;;
+    esac
+  fi
+)
+for scenario in absent empty docker-stub; do
+  mountpoint_case "$scenario" success
+  pass "unmounted /opt ($scenario) mounts and configures the data partition"
+done
+for scenario in docker-data docker-dangling-link opt-symlink docker-symlink other-directory hidden-file opt-file; do
+  mountpoint_case "$scenario" failure
+  pass "unsafe /opt ($scenario) is preserved without partition or mount writes"
+done
+# Linux permits a filename consisting only of a newline. Windows does not.
+# This case must run (and fail the suite on error) in the Ubuntu CI workflow.
+if [ "$(uname -s)" = Linux ]; then
+  mountpoint_case docker-newline-file failure
+  pass 'newline-named Docker data is preserved without partition or mount writes'
+else
+  printf 'SKIP: newline-only filenames require Linux; this case is mandatory in Ubuntu CI\n'
+fi
 (
   : > "$mutations"
   parted() { record_mutation "parted $*"; return 1; }

@@ -52,18 +52,13 @@ class PublicDefaultsTests(unittest.TestCase):
         self.assertIn("sed -i 's#downloads.openwrt.org#mirrors.tencent.com/lede#g'", patched)
         self.assertEqual(shadow, (self.root / SHADOW).read_bytes())
 
-    def test_generator_changes_only_the_two_disabled_defaults(self):
+    def test_generator_sets_only_new_radio_defaults(self):
         original = (self.root / WIRELESS).read_text(encoding='utf-8')
         self.customize()
         patched = (self.root / WIRELESS).read_text(encoding='utf-8')
         restored = patched
-        for section in ('section', 'iface'):
-            before = "set wireless.${%s}.disabled='0'" % section
-            after = "set wireless.${%s}.disabled='1'" % section
-            self.assertEqual(1, original.count(before))
-            self.assertEqual(1, patched.count(after))
-            self.assertNotIn(before, patched)
-            restored = restored.replace(after, before)
+        for name, value in (('ssid', 'openwr'), ('encryption', ''), ('key', '')):
+            restored = restored.replace(f'\t{name}="{value}"', f'\t{name}="$default_{name}"', 1)
         self.assertEqual(original, restored)
 
     def test_repeated_customization_is_byte_identical(self):
@@ -109,7 +104,7 @@ class PublicDefaultsTests(unittest.TestCase):
         self.assertEqual(before, (live_shadow.read_bytes(), live_wifi.read_bytes()))
 
     @unittest.skipUnless(BASH, 'runtime generator check requires Bash')
-    def test_late_radio_discovery_emits_disabled_device_and_interface(self):
+    def test_late_radio_discovery_emits_enabled_openwr_without_password(self):
         self.customize()
         script = r'''
 set -eu
@@ -118,35 +113,27 @@ uci() { if [ "$*" = '-q batch' ]; then cat; fi; }
 source "$1"
 mac80211_get_defaults() {
     default_country=CN
-    default_encryption=
-    default_ssid=
-    default_key=
+    default_encryption=sae
+    default_ssid=upstream-name
+    default_key=upstream-key
     default_mac_count=
 }
 devidx=0
 mac80211_emit_detect phy0 platform/mock-radio 5g 36 HE80 ''
 '''
         result = subprocess.run([BASH, '-c', script, 'generator-test', (self.root / WIRELESS).as_posix()], check=True, text=True, capture_output=True)
-        self.assertIn("set wireless.radio0.disabled='1'", result.stdout)
-        self.assertIn("set wireless.default_radio0.disabled='1'", result.stdout)
+        self.assertIn("set wireless.radio0.disabled='0'", result.stdout)
+        self.assertIn("set wireless.default_radio0.disabled='0'", result.stdout)
         self.assertIn("set wireless.default_radio0.key=''", result.stdout)
-        self.assertNotIn("disabled='0'", result.stdout)
+        self.assertIn("set wireless.default_radio0.ssid='openwr'", result.stdout)
+        self.assertIn("set wireless.default_radio0.encryption='none'", result.stdout)
+        self.assertNotIn('upstream-key', result.stdout)
+        self.assertNotIn("disabled='1'", result.stdout)
 
-    @unittest.skipUnless(BASH, 'runtime Wi-Fi defaults check requires Bash')
-    def test_uci_defaults_preserve_existing_key_and_disable_unconfigured_wifi(self):
+    def test_uci_defaults_never_rewrite_existing_wireless_sections(self):
         defaults = (REPO / 'files/etc/uci-defaults/zzzz-custom').read_text(encoding='utf-8')
-        function = re.search(r'^configure_wifi\(\) \{.*?^\}', defaults, re.MULTILINE | re.DOTALL)
-        self.assertIsNotNone(function)
-        script = r'''
-set -eu
-config_get() { printf -v "$1" '%s' "$EXISTING_KEY"; }
-uci() { printf '%s\n' "$*"; }
-''' + function[0] + '\nEXISTING_KEY="$1"\nconfigure_wifi default_radio0\n'
-        configured = subprocess.run([BASH, '-c', script, 'wifi-test', 'fixture-owner-key'], check=True, text=True, capture_output=True)
-        self.assertEqual('', configured.stdout)
-        unconfigured = subprocess.run([BASH, '-c', script, 'wifi-test', ''], check=True, text=True, capture_output=True)
-        self.assertIn('wireless.default_radio0.disabled=1', unconfigured.stdout)
-        self.assertNotIn('.key=', unconfigured.stdout)
+        self.assertNotRegex(defaults, r'(?m)^[^#\n]*(?:wireless\.|config_load wireless|config_foreach .*wifi)')
+
 
 
 if __name__ == '__main__':

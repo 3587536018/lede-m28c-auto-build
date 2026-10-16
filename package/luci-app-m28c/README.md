@@ -11,7 +11,7 @@
 
 ## 构建接入
 
-将此目录复制到 LEDE 的 `package/luci-app-m28c`，设置 `CONFIG_PACKAGE_luci-app-m28c=y`，在 feeds 更新后执行仓库的 `scripts/customize-ui.py LEDE_ROOT`。iStore 补丁只修改语言选择函数与菜单标题；遇到不认识的上游代码会明确停止构建。
+将此目录复制到 LEDE 的 `package/luci-app-m28c`，设置 `CONFIG_PACKAGE_luci-app-m28c=y`，在 feeds 更新后执行仓库的 `scripts/customize-ui.py LEDE_ROOT`。iStore 补丁修复语言选择、菜单标题及原生中文 LMO 的构建别名；遇到不认识的上游代码会明确停止构建。
 
 ## 预览与验证
 

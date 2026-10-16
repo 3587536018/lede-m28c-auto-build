@@ -1,0 +1,36 @@
+{
+  "repository": "https://github.com/immortalwrt/luci",
+  "revision": "af8a35c38a548a5319349e3ff8ff70820bb0a4b3",
+  "source_directory": "collections/luci-lib-docker",
+  "files": [
+    {
+      "path": "LICENSE",
+      "upstream_path": "LICENSE",
+      "git_blob_sha1": "f49a4e16e68b128803cc2dcea614603632b04eac",
+      "modified": false
+    },
+    {
+      "path": "NOTICE",
+      "upstream_path": "NOTICE",
+      "git_blob_sha1": "47e19692130f6fe5b5421a531e1f0a843bee2c49",
+      "modified": false
+    },
+    {
+      "path": "Makefile",
+      "upstream_path": "collections/luci-lib-docker/Makefile",
+      "git_blob_sha1": "11221e5d75d4e4f8c59d68c041bdb1c60c51918f",
+      "modified": true
+    },
+    {
+      "path": "luasrc/docker.lua",
+      "upstream_path": "collections/luci-lib-docker/luasrc/docker.lua",
+      "git_blob_sha1": "346b0ef23542fe53d3aea457c45bbda6327c8bc2",
+      "modified": false
+    }
+  ],
+  "license_text": {
+    "path": "COPYING",
+    "source": "https://raw.githubusercontent.com/spdx/license-list-data/v3.25.0/text/AGPL-3.0-only.txt",
+    "sha256": "d8a6cc31abc16b6748c7a21f21611f5a1ec33f67d22ca23d7da1c19b95496bee"
+  }
+}

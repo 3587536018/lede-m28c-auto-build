@@ -34,6 +34,8 @@ jobs:
       - name: Validate customization
         run: |
           python3 -m pip install --disable-pip-version-check 'lupa==2.8'
+          command -v jq
+          command -v make
           python3 -m unittest discover -s tests -p 'test_*.py' -v
           bash tests/expand-data-test.sh
           bash -n build.sh
@@ -115,6 +117,21 @@ jobs:
           path: release_assets/
           if-no-files-found: error
           retention-days: 14
+      - name: Export matching signed packages
+        run: |
+          set -euo pipefail
+          python3 scripts/export-package-repository.py lede package_assets
+          cp sources.lock.json package_assets/
+          git rev-parse HEAD > package_assets/customization.commit
+          cd package_assets
+          sha256sum sources.lock.json customization.commit >> sha256sums
+      - name: Upload matching packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: m28c-matching-packages-${{ github.run_number }}
+          path: package_assets/
+          if-no-files-found: error
+          retention-days: 14
       - name: Check downloaded sources for caching
         id: downloaded-sources
         if: always() && steps.dl-cache.outputs.cache-hit != 'true' && steps.dl-cache.outputs.cache-primary-key != ''
@@ -168,7 +185,7 @@ jobs:
           cat > release_assets/RELEASE.md <<'EOF'
           MangoPi M28C 公开定制固件：中文控制台、iStore、QModem、OpenClash、Docker、Homebox。
 
-          首次通过网线访问 http://192.168.1.1，以 root 登录 LuCI 并设置密码，再配置 Wi-Fi。
+          首次访问 http://192.168.1.1，以 root 登录 LuCI 并设置密码。Wi-Fi 默认启用，名称 openwr，开放网络且无密码。
           固件不预置密码、Wi-Fi 密钥、代理订阅、DDNS 令牌或设备私钥。
           OpenClash、文件共享和 FTP 需要自行配置并启用。
 

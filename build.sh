@@ -44,6 +44,12 @@ find feeds/qmodem -path '*/.git' -prune -o -name Makefile -print0 | while IFS= r
     sed -i '/kmod-mhi-wwan[[:space:]]*\\$/d; /kmod-mhi-pci-generic[[:space:]]*\\$/d; /kmod-mhi-wwan-ctrl[[:space:]]*\\$/d; /kmod-mhi-wwan-mbim[[:space:]]*\\$/d; /quectel-CM-5G[[:space:]]*\\$/d' "$qmodem_makefile"
 done
 
+# Restore the original Lua DockerMan UI without changing the locked LuCI feed.
+# Remove only these two upstream package definitions before package scanning.
+rm -rf package/feeds/luci/luci-app-dockerman package/feeds/luci/luci-lib-docker \
+    feeds/luci/applications/luci-app-dockerman feeds/luci/collections/luci-lib-docker \
+    feeds/luci/libs/luci-lib-docker
+
 # Add every project package before OpenWrt scans package metadata.
 test -f "$ROOT_DIR/package/luci-app-m28c/Makefile"
 for custom_package in "$ROOT_DIR"/package/*; do
@@ -53,6 +59,7 @@ for custom_package in "$ROOT_DIR"/package/*; do
     mkdir -p "package/custom/$package_name"
     cp -a "$custom_package/." "package/custom/$package_name/"
 done
+python3 "$ROOT_DIR/scripts/prepare-openclash-core.py" "$ROOT_DIR/lede"
 python3 "$ROOT_DIR/scripts/customize-public.py" "$ROOT_DIR/lede"
 python3 "$ROOT_DIR/scripts/customize-ui.py" "$ROOT_DIR/lede"
 python3 "$ROOT_DIR/scripts/customize-qmodem.py" "$ROOT_DIR/lede"

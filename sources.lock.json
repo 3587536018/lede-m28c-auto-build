@@ -21,6 +21,20 @@
     {"name": "telephony", "url": "https://github.com/coolsnowwolf/telephony.git", "revision": "a04b7acfd30a6f8f4d78e62955376c4febcb0976"},
     {"name": "qmodem", "url": "https://github.com/FUjr/QModem.git", "revision": "f5035b7d6d643666556e5c3fe7e765b3ebe79379"},
     {"name": "istore", "url": "https://github.com/linkease/istore.git", "revision": "07573209abc9377a128c56a3f9322ebc8d9b7d31"},
-    {"name": "openclash", "url": "https://github.com/vernesong/OpenClash.git", "revision": "c3a33c1d3407956fdf8f0e0b7c1a4c52e6ad9593"}
-  ]
+    {"name": "openclash", "url": "https://github.com/vernesong/OpenClash.git", "revision": "e553e82e01c697aefbe1555261a503f425e00ccd", "release": "v0.48.002"}
+  ],
+  "binaries": {
+    "openclash_core": {
+      "project": "MetaCubeX/mihomo",
+      "version": "1.19.32",
+      "architecture": "linux-arm64",
+      "asset": "mihomo-linux-arm64-v1.19.32.gz",
+      "url": "https://github.com/MetaCubeX/mihomo/releases/download/v1.19.32/mihomo-linux-arm64-v1.19.32.gz",
+      "sha256": "9dd862e28b46ff7d775f169cceebc28deccaa0a9e804237d421cd2571e0caba0",
+      "size": 20809592,
+      "release_url": "https://github.com/MetaCubeX/mihomo/releases/tag/v1.19.32",
+      "verified_on": "2026-10-16",
+      "digest_source": "GitHub release asset digest"
+    }
+  }
 }
