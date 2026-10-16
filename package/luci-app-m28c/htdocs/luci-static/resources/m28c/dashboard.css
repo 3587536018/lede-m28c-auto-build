@@ -13,6 +13,8 @@
 }
 .m28c-dashboard *, .m28c-dashboard *::before, .m28c-dashboard *::after { box-sizing: border-box; }
 .m28c-dashboard h2, .m28c-dashboard h3, .m28c-dashboard p { margin: 0; padding: 0; border: 0; color: inherit; }
+/* Argon styles headings as white panels; keep dashboard headings as plain text. */
+.m28c-dashboard h2, .m28c-dashboard h3 { background: transparent; box-shadow: none; border-radius: 0; width: auto; }
 .m28c-dashboard a { text-decoration: none; }
 .m28c-dashboard a:focus-visible { outline: 3px solid #2ba99e; outline-offset: 4px; }
 .m28c-dashboard svg { width: 22px; height: 22px; flex-shrink: 0; }
