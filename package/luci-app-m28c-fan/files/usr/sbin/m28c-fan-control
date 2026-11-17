@@ -1,0 +1,212 @@
+#!/bin/sh
+# M28C PWM3: one channel, normal polarity, 20 kHz.
+# Adapted from luci-app-openfi; see SOURCE.txt for attribution.
+SYSFS=${M28C_FAN_SYSFS:-/sys}
+RUNDIR=${M28C_FAN_RUNDIR:-/var/run}
+PWM=
+PWM_PERIOD_NS=50000
+CPU_SENSOR=
+
+uint() {
+    case "$1" in ''|*[!0-9]*) return 1;; esac
+    [ "${#1}" -le 3 ] && [ "$1" -ge "$2" ] && [ "$1" -le "$3" ]
+}
+option() {
+    value=$(uci -q get "m28c_fan.fan.$1")
+    if uint "$value" "$3" "$4"; then awk -v n="$value" 'BEGIN {printf "%d\n",n}'; else echo "$2"; fi
+}
+load_config() {
+    mode=$(uci -q get m28c_fan.fan.mode)
+    case "$mode" in auto|manual) ;; *) mode=auto;; esac
+    period=$(option period 5 2 30)
+    min_speed=$(option min_speed 30 5 100)
+    manual_speed=$(option manual_speed 30 0 100)
+    emergency_temp=$(option emergency_temp 85 60 100)
+    fan_stop=$(option fan_stop 1 0 1)
+    # Fill in missing points without accepting a descending or crossed curve.
+    t1=$(option temp1 60 20 95)
+    t2=$(option temp2 65 20 95)
+    t3=$(option temp3 70 20 95)
+    t4=$(option temp4 75 20 95)
+    s1=$(option speed1 "$min_speed" 0 100)
+    s2=$(option speed2 55 0 100)
+    s3=$(option speed3 80 0 100)
+    s4=$(option speed4 100 0 100)
+    if ! valid_curve; then
+        t1=60; t2=65; t3=70; t4=75
+        s1=$min_speed; s2=55; s3=80; s4=100
+        [ "$s2" -ge "$s1" ] || s2=$s1
+        [ "$s3" -ge "$s2" ] || s3=$s2
+        emergency_temp=85
+        logger -t m28c-fan "Invalid curve; using the default CPU fan curve"
+    fi
+}
+valid_curve() {
+    [ "$t2" -ge "$((t1 + 2))" ] && [ "$t3" -ge "$((t2 + 2))" ] &&
+    [ "$t4" -ge "$((t3 + 2))" ] && [ "$emergency_temp" -ge "$((t4 + 2))" ] &&
+    [ "$s1" -ge "$min_speed" ] && [ "$s2" -ge "$s1" ] &&
+    [ "$s3" -ge "$s2" ] && [ "$s4" -ge "$s3" ]
+}
+curve() {
+    if [ "$1" -le "$t1" ]; then echo "$s1"; return; fi
+    if [ "$1" -ge "$t4" ]; then echo "$s4"; return; fi
+    left_t=$t1; left_s=$s1
+    for point in "$t2:$s2" "$t3:$s3" "$t4:$s4"; do
+        right_t=${point%:*}; right_s=${point#*:}
+        if [ "$1" -le "$right_t" ]; then
+            echo "$((left_s + (right_s - left_s) * ($1 - left_t) / (right_t - left_t)))"
+            return
+        fi
+        left_t=$right_t; left_s=$right_s
+    done
+}
+read_temperatures() {
+    if [ -z "$CPU_SENSOR" ] || [ ! -r "$CPU_SENSOR" ]; then
+        CPU_SENSOR=
+        for zone in "$SYSFS"/class/thermal/thermal_zone*; do
+            case "$(cat "$zone/type" 2>/dev/null)" in
+                soc-thermal|cpu-thermal) CPU_SENSOR="$zone/temp"; break;;
+            esac
+        done
+    fi
+    cpu=
+    [ -n "$CPU_SENSOR" ] || return 0
+    cpu=$(awk '$1 ~ /^[0-9]+$/ && $1 <= 150000 {printf "%d\n", $1/1000}' "$CPU_SENSOR" 2>/dev/null)
+}
+
+choose_speed() {
+    reason=auto
+    target=0
+    if ! uint "$cpu" 0 150; then target=100; reason=sensor_fault; return; fi
+    if [ "$cpu" -ge "$emergency_temp" ]; then target=100; reason=overheat; return; fi
+    if [ "$mode" = manual ]; then
+        target=$manual_speed
+        [ "$target" -eq 0 ] || [ "$target" -ge "$min_speed" ] || target=$min_speed
+        reason=manual
+    else
+        target=$(curve "$cpu")
+        if [ "$fan_stop" -eq 1 ] && [ "$cpu" -lt "$t1" ]; then
+            target=0
+            reason=low_temp
+        fi
+    fi
+}
+next_output() {
+    next=$target
+    if [ "$reason" = low_temp ]; then boosted=0; return; fi
+    # Rise immediately; reduce at most 10 percentage points per sample.
+    # The startup output is not an operating point to ramp down from.
+    if [ "${boosted:-0}" -eq 0 ] && [ "$next" -lt "$((current - 10))" ]; then next=$((current - 10)); fi
+    boosted=0
+    if [ "$next" -gt 0 ] && [ "$next" -lt "$min_speed" ]; then
+        if [ "$target" -eq 0 ]; then next=0; else next=$min_speed; fi
+    fi
+}
+find_pwm() {
+    PWM=
+    for chip in "$SYSFS"/class/pwm/pwmchip*; do
+        device=$(readlink -f "$chip/device" 2>/dev/null)
+        [ "${device##*/}" = ffa90030.pwm ] || continue
+        [ "$(cat "$chip/npwm" 2>/dev/null)" = 1 ] || continue
+        PWM="$chip"
+        return 0
+    done
+    return 1
+}
+init_pwm() {
+    find_pwm || return 1
+    path="$PWM/pwm0"
+    if [ ! -d "$path" ]; then
+        echo 0 > "$PWM/export" || return 1
+    fi
+    [ -w "$path/duty_cycle" ] || return 1
+    old_period=$(cat "$path/period" 2>/dev/null)
+    if [ "${old_period:-0}" -gt 0 ]; then
+        echo 0 > "$path/duty_cycle" || return 1
+    fi
+    echo 0 > "$path/enable" || return 1
+    echo "$PWM_PERIOD_NS" > "$path/period" || return 1
+    echo normal > "$path/polarity" || return 1
+    echo 0 > "$path/duty_cycle" || return 1
+    echo 1 > "$path/enable" || return 1
+}
+write_speed() {
+    [ -n "$PWM" ] && [ -w "$PWM/pwm0/duty_cycle" ] || return 1
+    duty=$((PWM_PERIOD_NS * $1 / 100))
+    printf '%s\n' "$duty" > "$PWM/pwm0/duty_cycle"
+}
+
+status() {
+    now=$(date +%s)
+    printf '{"updated":%s,"mode":"%s","reason":"%s","output":%s,"target":%s,"cpu":%s,"period":%s}\n'         "$now" "$mode" "$reason" "$current" "$target" "${cpu:-null}" "$period"         > "$RUNDIR/m28c-fan.json.tmp"
+    mv "$RUNDIR/m28c-fan.json.tmp" "$RUNDIR/m28c-fan.json"
+}
+pause() {
+    # A foreground sleep defers traps until it ends; procd's 5 s TERM timeout
+    # would then kill the service before its exit handler runs.
+    # A HUP only marks a reload, which still applies at the next sample.
+    sleep "$1" &
+    sleep_pid=$!
+    while kill -0 "$sleep_pid" 2>/dev/null; do wait "$sleep_pid"; done
+    sleep_pid=
+}
+shutdown() {
+    trap - EXIT INT TERM
+    [ -z "${sleep_pid:-}" ] || kill "$sleep_pid" 2>/dev/null
+    exit_speed=$min_speed
+    read_temperatures
+    if ! uint "$cpu" 0 150 || [ "$cpu" -ge "$emergency_temp" ] || [ "$reason" = pwm_fault ]; then
+        exit_speed=100
+    fi
+    if ! write_speed "$exit_speed"; then reason=pwm_fault; fi
+    current=$exit_speed; target=$exit_speed
+    [ "$reason" = pwm_fault ] || reason=stopped
+    status
+    exit
+}
+start_fan() {
+    [ "$target" -gt 0 ] && [ "$current" -eq 0 ] || return 0
+    # Protection requests bypass the normal 30% startup stage.
+    case "$reason" in overheat|sensor_fault) return 0;; esac
+    write_speed "$min_speed" || return 1
+    current=$min_speed; reason=starting; status
+    pause 1
+    read_temperatures
+    choose_speed
+    boosted=1
+}
+main() {
+    reload_pending=0
+    trap 'reload_pending=1' HUP
+    load_config
+    cpu=; current=0; target=0
+    trap shutdown EXIT
+    trap 'exit 0' INT TERM
+    read_temperatures
+    while ! init_pwm; do
+        reason=pwm_fault; status
+        logger -t m28c-fan "PWM initialization failed; retrying in 5 seconds"
+        pause 5
+        read_temperatures
+    done
+    boosted=0
+    while :; do
+        if [ "$reload_pending" -eq 1 ]; then
+            reload_pending=0
+            load_config
+        fi
+        read_temperatures
+        choose_speed
+        start_fan || exit 1
+        next_output
+        if ! write_speed "$next"; then
+            reason=pwm_fault; status
+            logger -t m28c-fan "PWM write failed"
+            exit 1
+        fi
+        current=$next
+        status
+        pause "$period"
+    done
+}
+[ "${1:-}" = --library ] || main "$@"

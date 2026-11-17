@@ -56,6 +56,7 @@ rm -rf package/feeds/luci/luci-app-dockerman package/feeds/luci/luci-lib-docker 
     feeds/luci/libs/luci-lib-docker
 
 # Add every project package before OpenWrt scans package metadata.
+python3 "$ROOT_DIR/scripts/verify-fan-package.py"
 test -f "$ROOT_DIR/package/luci-app-m28c/Makefile"
 for custom_package in "$ROOT_DIR"/package/*; do
     test -d "$custom_package" || continue
@@ -131,6 +132,7 @@ fi
 image_dir=bin/targets/rockchip/armv8
 image_base=openwrt-rockchip-armv8-widora_mangopi-m28c
 python3 "$ROOT_DIR/scripts/verify-runtime-customizations.py" "$ROOT_DIR/lede"
+python3 "$ROOT_DIR/scripts/verify-fan-package.py" --lede "$ROOT_DIR/lede"
 if [ ! -s "$image_dir/$image_base-ext4-sysupgrade.img.gz" ] || [ ! -s "$image_dir/$image_base-squashfs-sysupgrade.img.gz" ]; then
     echo "Missing image after make; retrying the image target"
     make V=0 -j2 image 2>&1 | tee -a /tmp/build.log

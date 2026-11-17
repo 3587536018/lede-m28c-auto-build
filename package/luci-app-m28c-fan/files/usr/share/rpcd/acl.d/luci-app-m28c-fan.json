@@ -1,0 +1,40 @@
+{
+  "luci-app-m28c-fan": {
+    "description": "Configure M28C fan temperature curve and read PWM output",
+    "read": {
+      "uci": [
+        "m28c_fan"
+      ],
+      "ubus": {
+        "service": [
+          "list"
+        ],
+        "luci": [
+          "getUnixtime"
+        ]
+      },
+      "file": {
+        "/var/run/m28c-fan.json": [
+          "read"
+        ],
+        "/tmp/run/m28c-fan.json": [
+          "read"
+        ],
+        "/sys/class/thermal/thermal_zone0/temp": [
+          "read"
+        ],
+        "/sys/devices/virtual/thermal/thermal_zone0/temp": [
+          "read"
+        ],
+        "/sys/devices/platform/soc/ffa90030.pwm/pwm": [
+          "read"
+        ]
+      }
+    },
+    "write": {
+      "uci": [
+        "m28c_fan"
+      ]
+    }
+  }
+}

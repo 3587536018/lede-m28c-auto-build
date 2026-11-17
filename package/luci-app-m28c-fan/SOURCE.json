@@ -1,0 +1,76 @@
+{
+  "schema": 1,
+  "origin": "User-supplied 风扇固件.ipk",
+  "archive": "original.ipk",
+  "size": 10905,
+  "sha256": "4f43ab3d4e8b190beed27915fc4ab8ed26bfb29c46e6f11f82bcd557e0840b00",
+  "control": {
+    "Package": "luci-app-m28c-fan",
+    "Version": "2026.11.16-r3",
+    "Depends": "libc, luci-base",
+    "Provides": "luci-app-m28c-fan-any",
+    "Source": "package/luci-app-m28c-fan",
+    "SourceName": "luci-app-m28c-fan",
+    "License": "Apache-2.0",
+    "Section": "luci",
+    "SourceDateEpoch": "1794504350",
+    "Maintainer": "OpenWrt LuCI community",
+    "Architecture": "all",
+    "Installed-Size": "9973",
+    "Description": " MangoPi M28C PWM fan control"
+  },
+  "conffiles": [
+    "/etc/config/m28c_fan"
+  ],
+  "files": {
+    "etc/config/m28c_fan": {
+      "sha256": "39597cd6491f0a41d6909f9447d0cb26806011fb66834d42e3bae7d9858809ed",
+      "size": 353,
+      "mode": "0644"
+    },
+    "etc/init.d/m28c-fan": {
+      "sha256": "cb910e2e115853f804b550387feb4a0722fa0b9daac0d4a632586cfeb4a85757",
+      "size": 567,
+      "mode": "0755"
+    },
+    "etc/uci-defaults/90-m28c-fan": {
+      "sha256": "5fd34efc6f3e65fbfd88df5bd8282f3be9e7a7264778efd7bdd1fc34166eaaae",
+      "size": 126,
+      "mode": "0755"
+    },
+    "usr/sbin/m28c-fan-control": {
+      "sha256": "ddfe56c454fbd6bd35875d9ca718ad391fdac6527a8dbb595b630763e4203d24",
+      "size": 7088,
+      "mode": "0755"
+    },
+    "usr/share/luci/menu.d/luci-app-m28c-fan.json": {
+      "sha256": "6a3aa1898b85893a5fe63d9eb4de987e9e92700689c082c9cde6d54cf64222b1",
+      "size": 285,
+      "mode": "0644"
+    },
+    "usr/share/rpcd/acl.d/luci-app-m28c-fan.json": {
+      "sha256": "4d83e6a8aceefc0e96d5759095055b49af56834eced20723865bbd26a26b89fc",
+      "size": 768,
+      "mode": "0644"
+    },
+    "www/luci-static/resources/view/m28c-fan/settings.js": {
+      "sha256": "f7ee9982620a500b95ed21143c8af1b188c1298fe96a736fd6bd1f5129338dc7",
+      "size": 15889,
+      "mode": "0644"
+    }
+  },
+  "control_scripts": {
+    "postinst": {
+      "sha256": "61511dd6dcc9e5ae9038f7ea8b0ecdf3bdd17612af012c3d9536e9aca03691df",
+      "size": 160
+    },
+    "postinst-pkg": {
+      "sha256": "ab1fbeaaef80ce81cc4a8e403d96ff0e564088417d52e735c7c4a1adb4cc7a95",
+      "size": 138
+    },
+    "prerm": {
+      "sha256": "41e62438f65308026184be1d4d931ae9100923e5ae97b146fb678e5b6cd0fc6c",
+      "size": 117
+    }
+  }
+}

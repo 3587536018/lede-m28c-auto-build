@@ -12,3 +12,6 @@ tests/fixtures/qmodem-f5035b7d/** whitespace=-blank-at-eol
 tests/fixtures/automount/** text eol=lf whitespace=-blank-at-eol
 patches/docker/** text eol=lf
 scripts/automount/** text eol=lf
+# Imported fan payload hashes cover the supplied IPK's exact bytes.
+package/luci-app-m28c-fan/original.ipk -text
+package/luci-app-m28c-fan/files/** -text

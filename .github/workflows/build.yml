@@ -49,6 +49,10 @@ jobs:
           sh -n scripts/automount/m28c-automount.init
           sh -n patches/docker/files/m28c-docker.sh
           sh -n patches/docker/files/90-m28c-docker-nftables
+          sh -n package/luci-app-m28c-fan/files/etc/init.d/m28c-fan
+          sh -n package/luci-app-m28c-fan/files/etc/uci-defaults/90-m28c-fan
+          sh -n package/luci-app-m28c-fan/files/usr/sbin/m28c-fan-control
+          node --check package/luci-app-m28c-fan/files/www/luci-static/resources/view/m28c-fan/settings.js
       - name: Free runner disk space
         env:
           DEBIAN_FRONTEND: noninteractive
@@ -100,6 +104,7 @@ jobs:
           cp "$target"/openwrt-rockchip-armv8-widora_mangopi-m28c.manifest release_assets/
           cp "$target"/{config.buildinfo,feeds.buildinfo,version.buildinfo,profiles.json} release_assets/
           cp sources.lock.json release_assets/
+          cp package/luci-app-m28c-fan/SOURCE.json release_assets/fan-package-source.json
           git rev-parse HEAD > release_assets/customization.commit
           python3 scripts/verify-firmware.py release_assets/*.img.gz
           python3 scripts/prepare-sources.py --verify-manifest "$target"/openwrt-rockchip-armv8-widora_mangopi-m28c.manifest
@@ -213,4 +218,5 @@ jobs:
             release_assets/profiles.json
             release_assets/sources.lock.json
             release_assets/customization.commit
+            release_assets/fan-package-source.json
             release_assets/sha256sums

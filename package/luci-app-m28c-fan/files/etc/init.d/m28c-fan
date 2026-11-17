@@ -1,0 +1,25 @@
+#!/bin/sh /etc/rc.common
+START=99
+STOP=13
+USE_PROCD=1
+
+service_triggers() {
+    procd_add_reload_trigger m28c_fan
+}
+
+start_service() {
+    [ "$(cat /tmp/sysinfo/board_name 2>/dev/null)" = widora,mangopi-m28c ] || return 1
+    procd_open_instance fan
+    procd_set_param command /usr/sbin/m28c-fan-control
+    procd_set_param respawn 3600 5 5
+    procd_set_param term_timeout 5
+    procd_set_param stderr 1
+    procd_close_instance
+}
+
+reload_service() {
+    if procd_running m28c-fan fan && procd_send_signal m28c-fan fan HUP; then
+        return 0
+    fi
+    start
+}

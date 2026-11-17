@@ -1,0 +1,18 @@
+{
+  "admin/system/m28c-fan": {
+    "title": "风扇控制",
+    "order": 65,
+    "action": {
+      "type": "view",
+      "path": "m28c-fan/settings"
+    },
+    "depends": {
+      "acl": [
+        "luci-app-m28c-fan"
+      ],
+      "uci": {
+        "m28c_fan": true
+      }
+    }
+  }
+}

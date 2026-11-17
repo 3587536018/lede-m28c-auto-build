@@ -1,5 +1,6 @@
 # Must survive defconfig and appear in the image manifest.
 luci-app-m28c
+luci-app-m28c-fan
 luci-theme-argon
 luci-app-argon-config
 luci-app-store

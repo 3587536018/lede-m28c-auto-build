@@ -1,0 +1,4 @@
+#!/bin/sh
+[ "$(cat /tmp/sysinfo/board_name 2>/dev/null)" = widora,mangopi-m28c ] || exit 0
+/etc/init.d/m28c-fan enable
+exit 0
