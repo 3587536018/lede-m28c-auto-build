@@ -107,6 +107,7 @@ if 'LARGEFILE64_SOURCE' not in source:
 PYEOF
 
 df -h
+python3 "$ROOT_DIR/scripts/seed-erofs-source.py" --root "$ROOT_DIR"
 for attempt in 1 2 3; do
     if make download -j4; then
         break

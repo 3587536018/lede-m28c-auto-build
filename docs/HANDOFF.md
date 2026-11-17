@@ -22,6 +22,7 @@
 - `scripts/customize-docker.py` 与 `patches/docker/`：将 Docker 原生 nftables、容器 DNS 选择和 fw4 默认策略纳入锁定 dockerd 软件包，保留普通 UCI 配置路径。见 `docs/DOCKER-FIREWALL.md`。
 - `scripts/customize-automount.py` 与 `scripts/automount/`：替换旧的匿名热插拔脚本，对外置数据分区执行受控挂载；显式 fstab 优先，保护系统盘和已有目录内容。见 `docs/AUTOMOUNT.md`。
 - `scripts/verify-firmware.py`：只读检查 gzip 压缩数据与 fwtool 升级元数据的完整性、CRC 和目标设备；构建和最终下载验收使用同一校验器。
+- `scripts/seed-erofs-source.py`：在下载与编译前，将仓库保留的官方 erofs-utils 1.8.10 原始归档校验后放入 `lede/dl`。构建 #116 因 kernel.org 连接超时且备用源 404 失败；本地归档与上游固定 SHA256 完全一致，不改变工具版本、构建定义或源锁。来源见 `sources/README.md`。
 - `scripts/verify-runtime-customizations.py`：编译后核对实际 `root-rockchip` 中 Docker 和热插拔文件的完整字节、必要执行权限、开机扫描链接及旧挂载脚本缺失，漏装或被 overlay 覆盖时拒绝交付。
 - `.github/workflows/build.yml`：Ubuntu22.04、下载缓存、固件及失败日志 artifact、唯一Release标签。
 

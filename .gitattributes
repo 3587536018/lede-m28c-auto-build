@@ -15,3 +15,5 @@ scripts/automount/** text eol=lf
 # Imported fan payload hashes cover the supplied IPK's exact bytes.
 package/luci-app-m28c-fan/original.ipk -text
 package/luci-app-m28c-fan/files/** -text
+# Host source archives retain the upstream download checksum byte-for-byte.
+sources/*.tar.gz -text

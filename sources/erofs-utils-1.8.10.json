@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "project": "erofs-utils",
+  "version": "1.8.10",
+  "archive": "erofs-utils-1.8.10.tar.gz",
+  "size": 201240,
+  "sha256": "05eb4edebe11decce6ecb34e98d2f80c8cd283c2f2967d8ba7efd58418570514",
+  "retrieved_from": "https://git.kernel.org/pub/scm/linux/kernel/git/xiang/erofs-utils.git/snapshot/erofs-utils-1.8.10.tar.gz?download=1",
+  "retrieved_at_utc": "2026-11-17T12:48:08.056253+00:00",
+  "upstream_definition": {
+    "repository": "https://github.com/coolsnowwolf/lede.git",
+    "revision": "8e247d214f071ef0cb3a31c879d4daf224849d3e",
+    "path": "tools/erofs-utils/Makefile",
+    "sha256": "e3beb23de32a402c41c66b5d9d7bb797e12f509ac97f78b772e7dd892594fafd"
+  },
+  "purpose": "Original upstream archive cached for availability; its bytes match the existing locked PKG_HASH without modifying source version or build definition."
+}
