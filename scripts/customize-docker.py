@@ -56,7 +56,7 @@ def customize(root: Path) -> None:
     for path, text in pending:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding="utf-8", newline="\n")
-    print("Docker: package-native nftables backend, fw4 default bridge policy and router DNS")
+    print("Docker: package-native nftables, fw4 bridge policy, router DNS and /opt storage guard")
 
 
 if __name__ == "__main__":

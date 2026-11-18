@@ -12,6 +12,7 @@ import stat
 # Compare installed bytes with the actual patched package inputs, after make.
 # These paths contain public code/defaults, never a running router's config.
 FILES = {
+    "etc/uci-defaults/99-expand-data": "files/etc/uci-defaults/99-expand-data",
     "etc/init.d/dockerd": "feeds/packages/utils/dockerd/files/dockerd.init",
     "etc/config/dockerd": "feeds/packages/utils/dockerd/files/etc/config/dockerd",
     "usr/libexec/m28c-docker.sh": "feeds/packages/utils/dockerd/files/m28c-docker.sh",
@@ -26,6 +27,7 @@ FILES = {
 }
 EXECUTABLES = {
     "etc/init.d/dockerd", "etc/init.d/m28c-automount", "usr/libexec/m28c-automount",
+    "etc/uci-defaults/99-expand-data",
 }
 OBSOLETE = (
     "etc/15-automount", "etc/hotplug.d/block/15-automount",
@@ -51,6 +53,9 @@ def verify(lede: Path, image_root: Path | None = None) -> int:
         path = image_root / installed
         if path.exists() or path.is_symlink():
             raise ValueError(f"Obsolete automount script remains in image: {installed}")
+    state = image_root / "etc/m28c-opt-initialized"
+    if state.exists() or state.is_symlink():
+        raise ValueError("Device-specific storage initialization checkpoint must not be shipped")
     service = image_root / "etc/rc.d/S95m28c-automount"
     if not service.is_symlink() or os.readlink(service) != "../init.d/m28c-automount":
         raise ValueError("Automount boot scan is not enabled in the image")

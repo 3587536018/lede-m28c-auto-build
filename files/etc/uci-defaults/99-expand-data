@@ -1,15 +1,16 @@
 #!/bin/sh
-# Keep the image root partition at 1 GiB. Reuse an existing ext4 /opt or an
-# opt/optdata partition; otherwise use only verified trailing unallocated space.
-# The Docker package installs an empty /opt/docker placeholder in the image.
-# Never hide existing data, format an existing partition or copy Docker data
-# automatically.
+# Each fresh installation resets the system disk's trailing data partition.
+# Old /opt data is intentionally discarded; ordinary boots retain new data.
+# A durable checkpoint prevents formatting again after mount/config failure.
+# Never create swap, format another disk, or format a mounted partition.
 # A nonzero exit keeps this uci-defaults script available for the next boot.
 
 set -u
+STATE_FILE=/etc/m28c-opt-initialized
 
 fail() {
   echo "99-expand-data: $*" >&2
+  logger -t m28c-opt-init "$*" 2>/dev/null || true
   return 1
 }
 
@@ -86,7 +87,7 @@ find_labeled_partition() {
     label=$(blkid -s LABEL -o value "$candidate" 2>/dev/null) || label=
     case "$label" in
       opt|optdata)
-        [ "$candidate" != "$BOOT_PARTITION" ] || return 1
+        [ "$(cat "$entry/partition")" -gt "$(cat "/sys/class/block/${BOOT_PARTITION##*/}/partition")" ] || return 1
         [ -z "$found" ] || return 1
         found=$candidate
         ;;
@@ -111,13 +112,14 @@ partition_plan() {
       if (kind == "free") {
         if (end > free_end) { free_start=start; free_end=end }
       } else if ($1 ~ /^[0-9]+$/) {
-        count++; if ($1+0 > number) number=$1+0
+        count++; if ($1+0 != count || start <= last_end || end < start) bad=1
+        if ($1+0 > number) number=$1+0
         if (end > last_end) last_end=end
         if (kind == "extended") bad=1
       } else bad=1
     }
     END {
-      if (bad || !sector || !count || count != number || (table == "msdos" && number >= 4)) exit 1
+      if (bad || !sector || count != 2 || number != 2) exit 1
       align=1048576/sector
       start=int((free_start+align-1)/align)*align
       if (free_start <= last_end || (free_end-start+1)*sector < 805306368) exit 1
@@ -127,12 +129,18 @@ partition_plan() {
 }
 
 create_data_partition() {
-  local plan number start end sector part prefix tries actual_start actual_size signature
+  local plan number start end sector part prefix tries actual_start actual_size boot_start boot_size
   command -v parted >/dev/null 2>&1 || { fail "parted is missing"; return 1; }
   plan=$(partition_plan) || { fail "cannot confirm sufficient trailing free space; existing partitions preserved"; return 1; }
   read -r number start end sector <<EOF
 $plan
 EOF
+  boot_start=$(cat "/sys/class/block/${BOOT_PARTITION##*/}/start") || return 1
+  boot_size=$(cat "/sys/class/block/${BOOT_PARTITION##*/}/size") || return 1
+  case "$boot_start:$boot_size" in *[!0-9:]*|:*) return 1 ;; esac
+  [ "$number" = 3 ] && [ "$((start * sector / 512))" -eq "$(((boot_start + boot_size + 2047) / 2048 * 2048))" ] || {
+    fail "new partition plan is not immediately after the image root"; return 1
+  }
   case "$DISK" in *[0-9]) prefix="${DISK}p" ;; *) prefix=$DISK ;; esac
   part="${prefix}${number}"
   [ ! -e "$part" ] || { fail "$part already exists; refusing to format it"; return 1; }
@@ -155,10 +163,148 @@ EOF
     fail "$part geometry differs from the new partition plan; refusing to format"
     return 1
   }
-  signature=$(filesystem_type "$part") || signature=
-  [ -z "$signature" ] || { fail "$part contains a filesystem signature; refusing to overwrite it"; return 1; }
-  mkfs.ext4 -L optdata "$part" >&2 || { fail "format failed; inspect $part before retrying"; return 1; }
   printf '%s\n' "$part"
+}
+
+# Accept only the single trailing partition immediately after this image's
+# root partition. Both kernel/sysfs and the on-disk table must agree. This also
+# permits a pre-existing exFAT p3, but never a labelled kernel or foreign disk.
+verify_data_partition() {
+  local name boot_name number boot_number boot_start boot_size table
+  name=${PART##*/}; boot_name=${BOOT_PARTITION##*/}
+  [ "$PART" != "$BOOT_PARTITION" ] && [ -b "$PART" ] &&
+    [ "$(partition_disk "$PART")" = "$DISK" ] || return 1
+  number=$(cat "/sys/class/block/$name/partition") || return 1
+  boot_number=$(cat "/sys/class/block/$boot_name/partition") || return 1
+  DATA_START=$(cat "/sys/class/block/$name/start") || return 1
+  DATA_SIZE=$(cat "/sys/class/block/$name/size") || return 1
+  boot_start=$(cat "/sys/class/block/$boot_name/start") || return 1
+  boot_size=$(cat "/sys/class/block/$boot_name/size") || return 1
+  case "$number:$boot_number:$DATA_START:$DATA_SIZE:$boot_start:$boot_size" in
+    *[!0-9:]*) return 1 ;;
+  esac
+  # The pinned M28C image has kernel p1 and root p2. Fail closed on a new layout.
+  [ "$boot_number" = 2 ] && [ "$number" = 3 ] &&
+    [ "$DATA_START" -eq "$(((boot_start + boot_size + 2047) / 2048 * 2048))" ] &&
+    [ "$DATA_SIZE" -ge 1572864 ] || return 1
+  table=$(parted -m -s "$DISK" unit s print 2>/dev/null) || return 1
+  printf '%s\n' "$table" | awk -F: -v ds="$DATA_START" -v dz="$DATA_SIZE" \
+    -v bs="$boot_start" -v bz="$boot_size" '
+    NR == 2 {
+      sector=$4+0; total=$2+0
+      if ((sector != 512 && sector != 4096) || ($6 != "msdos" && $6 != "gpt")) bad=1
+    }
+    NR > 2 && NF {
+      if ($1 !~ /^[123]$/ || $2 !~ /^[0-9]+s$/ || $3 !~ /^[0-9]+s$/) { bad=1; next }
+      n=$1+0; start=($2+0)*sector/512; size=(($3+0)-($2+0)+1)*sector/512
+      if (n != ++count || start < last_end || size <= 0 || $5 == "extended") bad=1
+      last_end=start+size
+      if (n == 2 && (start != bs || size != bz)) bad=1
+      if (n == 3 && (start != ds || size != dz)) bad=1
+    }
+    END { if (bad || count != 3 || last_end > total*sector/512) exit 1 }
+  '
+}
+
+storage_state_load() {
+  local version phase boot part start size uuid extra line
+  STATE_PHASE=none; STATE_UUID=
+  [ ! -L "$STATE_FILE" ] || return 1
+  [ -e "$STATE_FILE" ] || return 0
+  [ -f "$STATE_FILE" ] && [ "$(wc -l < "$STATE_FILE")" -eq 1 ] || return 1
+  line=$(cat "$STATE_FILE") || return 1
+  IFS='|' read -r version phase boot part start size uuid extra <<EOF
+$line
+EOF
+  [ "$version" = m28c-opt-v1 ] && [ "$boot" = "$BOOT_PARTITION" ] &&
+    [ "$part" = "$PART" ] && [ "$start" = "$DATA_START" ] &&
+    [ "$size" = "$DATA_SIZE" ] && [ -z "$extra" ] || return 1
+  [ "$line" = "$version|$phase|$boot|$part|$start|$size|$uuid" ] || return 1
+  case "$phase:$uuid" in
+    pending:none) ;;
+    prepared:*) case "$uuid" in ''|*[!a-fA-F0-9-]*) return 1 ;; esac ;;
+    *) return 1 ;;
+  esac
+  STATE_PHASE=$phase; STATE_UUID=$uuid
+}
+
+storage_state_store() {
+  local temporary
+  [ ! -L "$STATE_FILE" ] || return 1
+  temporary=$(mktemp "${STATE_FILE}.XXXXXX") || return 1
+  if ! chmod 600 "$temporary" ||
+    ! printf 'm28c-opt-v1|%s|%s|%s|%s|%s|%s\n' "$1" "$BOOT_PARTITION" "$PART" "$DATA_START" "$DATA_SIZE" "$2" > "$temporary" ||
+    ! mv -f "$temporary" "$STATE_FILE"; then
+    rm -f "$temporary"
+    return 1
+  fi
+  sync
+}
+
+# A normal unmount is allowed only for this exact whole partition at /opt.
+# Any other mount, holder, active swap or storage daemon prevents the reset.
+verify_reset_idle() {
+  local id info entry backing swapdev swaptype rest mounts
+  if pidof dockerd containerd >/dev/null 2>&1; then
+    fail "Docker/containerd is running; refusing to reset its storage"; return 1
+  fi
+  id=$(cat "/sys/class/block/${PART##*/}/dev") || return 1
+  for entry in /sys/class/block/"${PART##*/}"/holders/*; do
+    [ ! -e "$entry" ] && [ ! -L "$entry" ] || { fail "$PART has active holders"; return 1; }
+  done
+  # Loop devices backed directly by this block partition need not appear in
+  # its holders directory (the normal root-overlay loop is backed by p2).
+  for entry in /sys/class/block/loop*/loop/backing_file; do
+    [ -f "$entry" ] || continue
+    backing=$(cat "$entry") || return 1
+    [ "$(canonical_device "$backing")" != "$PART" ] || {
+      fail "$PART backs an active loop device"; return 1
+    }
+  done
+  # Entries beneath /opt include bind mounts from entirely different devices.
+  awk '$5 ~ /^\/opt\// { bad=1 } END { exit bad }' /proc/self/mountinfo || {
+    fail "/opt has child mounts"; return 1
+  }
+  while read -r swapdev swaptype rest; do
+    [ "$swapdev" != Filename ] || continue
+    case "$swapdev" in /opt/*) fail "active swap under /opt"; return 1 ;; esac
+    [ "$(canonical_device "$swapdev")" != "$PART" ] || {
+      fail "$PART is active swap"; return 1
+    }
+  done < /proc/swaps
+  mounts=$(awk -v id="$id" '$3 == id { print $5 }' /proc/self/mountinfo) || return 1
+  if info=$(mounted_partition /opt); then
+    [ "$mounts" = /opt ] && [ "$info" = "$PART $(filesystem_type "$PART") /" ] || {
+      fail "/opt or the candidate partition has another mount"; return 1
+    }
+    umount /opt || { fail "/opt is busy; refusing reset"; return 1; }
+  fi
+  awk -v id="$id" '$3 == id || $5 == "/opt" || $5 ~ /^\/opt\// { bad=1 } END { exit bad }' /proc/self/mountinfo || {
+    fail "$PART remains mounted"; return 1
+  }
+}
+
+prepare_data_partition() {
+  local uuid
+  verify_data_partition || { fail "unsafe or unexpected system data partition"; return 1; }
+  storage_state_load || { fail "invalid /opt initialization checkpoint; refusing reset"; return 1; }
+  case "$STATE_PHASE" in
+    prepared)
+      uuid=$(blkid -s UUID -o value "$PART" 2>/dev/null) || return 1
+      [ "$(filesystem_type "$PART")" = ext4 ] && [ "$uuid" = "$STATE_UUID" ] || {
+        fail "prepared /opt identity changed; refusing reset"; return 1
+      }
+      return 0 ;;
+    pending) fail "interrupted /opt format requires inspection; refusing repeat format"; return 1 ;;
+  esac
+  verify_reset_idle || return 1
+  storage_state_store pending none || { fail "cannot persist pre-format checkpoint"; return 1; }
+  mkfs.ext4 -F -L optdata "$PART" >&2 || { fail "format failed; checkpoint retained for inspection"; return 1; }
+  sync || return 1
+  uuid=$(blkid -s UUID -o value "$PART" 2>/dev/null) || return 1
+  case "$uuid" in ''|*[!a-fA-F0-9-]*) fail "new ext4 UUID is invalid"; return 1 ;; esac
+  [ "$(filesystem_type "$PART")" = ext4 ] || return 1
+  storage_state_store prepared "$uuid" || { fail "cannot persist completed format checkpoint"; return 1; }
 }
 
 verify_opt_mount() {
@@ -195,90 +341,68 @@ configure_storage() {
   fi
 }
 
-configure_swap() {
-  local swapfile=/opt/swapfile available temporary
-  verify_opt_mount || { fail "/opt is not mounted; refusing to create swap on rootfs"; return 1; }
-  [ ! -L "$swapfile" ] || { fail "$swapfile is a symlink; refusing to use it"; return 1; }
-  if [ -e "$swapfile" ]; then
-    [ -f "$swapfile" ] && [ "$(filesystem_type "$swapfile")" = swap ] || {
-      fail "$swapfile is not a recognized swap file; existing contents preserved"
-      return 1
-    }
-  else
-    available=$(df -Pk /opt | awk 'NR == 2 { print $4 }')
-    case "$available" in ''|*[!0-9]*) fail "cannot determine /opt free space"; return 1 ;; esac
-    [ "$available" -ge 655360 ] || { fail "/opt needs 640 MiB free to create 512 MiB swap"; return 1; }
-    temporary=$(mktemp /opt/.m28c-swap.XXXXXX) || return 1
-    if ! dd if=/dev/zero of="$temporary" bs=1M count=512 2>/dev/null ||
-       ! chmod 600 "$temporary" || ! mkswap "$temporary" >/dev/null 2>&1; then
-      rm -f "$temporary"
-      fail "swap creation failed"
-      return 1
-    fi
-    mv "$temporary" "$swapfile" || { rm -f "$temporary"; return 1; }
-  fi
-  chmod 600 "$swapfile" || return 1
-  if ! awk -v file="$swapfile" '$1 == file { found=1 } END { exit !found }' /proc/swaps; then
-    swapon "$swapfile" || { fail "activating swap failed"; return 1; }
-  fi
-  uci -q delete fstab.swap || true
-  uci -q set fstab.swap=swap &&
-    uci -q set "fstab.swap.device=$swapfile" &&
-    uci -q set fstab.swap.enabled=1 &&
-    uci -q commit fstab || { fail "saving swap configuration failed"; return 1; }
+# Existing overlay contents no longer veto the new mount. They are never used
+# as Docker storage. Do not recursively delete an unverified overlay directory.
+verify_unmounted_opt() {
+  [ ! -L /opt ] || { fail "/opt is a symlink"; return 1; }
+  [ ! -e /opt ] || [ -d /opt ] || { fail "/opt is not a directory"; return 1; }
 }
 
-verify_unmounted_opt() {
-  local entry child
-  [ ! -L /opt ] || { fail "/opt is a symlink; inspect it manually"; return 1; }
-  [ -e /opt ] || return 0
-  [ -d /opt ] || { fail "/opt is not a directory; leaving it untouched"; return 1; }
-  for entry in /opt/* /opt/.[!.]* /opt/..?*; do
-    [ -e "$entry" ] || [ -L "$entry" ] || continue
-    # Only the empty directory shipped by the Docker package is safe to hide.
-    # After Docker has started it may hold real data on the root overlay.
-    [ "$entry" = /opt/docker ] && [ -d "$entry" ] && [ ! -L "$entry" ] || {
-      fail "unmounted /opt contains data or unexpected entries; preserve them before retrying"
-      return 1
-    }
-    ls -A "$entry" >/dev/null || { fail "cannot inspect $entry"; return 1; }
-    for child in "$entry"/* "$entry"/.[!.]* "$entry"/..?*; do
-      [ -e "$child" ] || [ -L "$child" ] || continue
-      fail "$entry contains data; preserve it before retrying"
-      return 1
-    done
+configure_no_swap() {
+  local section
+  # Remove only our historical swap entry, never unrelated user entries.
+  if [ "$(uci -q get fstab.swap.device)" = /opt/swapfile ]; then
+    uci -q delete fstab.swap || return 1
+  fi
+  section=$(uci -q show fstab | sed -n 's/^fstab\.\([^=]*\)=global$/\1/p') || return 1
+  [ -n "$section" ] || { fail "fstab global configuration is missing"; return 1; }
+  for section in $section; do
+    uci -q set "fstab.$section.auto_swap=0" &&
+      uci -q set "fstab.$section.anon_swap=0" || return 1
   done
+  uci -q commit fstab
+}
+
+initialize_storage() {
+  local prefix info
+  verify_unmounted_opt || return 1
+  BOOT_PARTITION=$(find_boot_partition) || { fail "cannot identify the boot partition"; return 1; }
+  DISK=$(partition_disk "$BOOT_PARTITION") || return 1
+  [ -b "$DISK" ] || { fail "$DISK is not a block device"; return 1; }
+  [ "$(cat "/sys/class/block/${BOOT_PARTITION##*/}/partition")" = 2 ] || {
+    fail "unexpected root partition; refusing partition changes"; return 1
+  }
+  PART=$(find_labeled_partition) || { fail "ambiguous or unsafe opt/optdata labels"; return 1; }
+  if [ -z "$PART" ]; then
+    case "$DISK" in *[0-9]) prefix="${DISK}p" ;; *) prefix=$DISK ;; esac
+    PART="${prefix}3"
+    if [ ! -e "$PART" ]; then
+      # A checkpoint without its partition is not a new install.
+      [ ! -e "$STATE_FILE" ] && [ ! -L "$STATE_FILE" ] || {
+        fail "initialized partition disappeared; refusing recreation"; return 1
+      }
+      PART=$(create_data_partition) || return 1
+    fi
+  fi
+  prepare_data_partition || return 1
+  if info=$(mounted_partition /opt); then
+    verify_opt_mount || { fail "existing /opt is not the prepared data partition"; return 1; }
+  else
+    mkdir -p /opt || return 1
+    mount -t ext4 "$PART" /opt || { fail "mount failed; prepared checkpoint retained"; return 1; }
+  fi
+  verify_opt_mount && configure_no_swap && configure_storage || return 1
+  echo "99-expand-data: initialized $PART at /opt; Docker storage ready; no swap"
 }
 
 main() {
-  local info fstype root
-  if info=$(mounted_partition /opt); then
-    # An already mounted data filesystem can be reused on ext4 installations
-    # without /rom or a resolvable root= argument. Discovery is only mandatory
-    # when we need to choose or create a partition ourselves.
-    BOOT_PARTITION=$(find_boot_partition) || BOOT_PARTITION=
-    read -r PART fstype root <<EOF
-$info
-EOF
-    verify_opt_mount || { fail "existing /opt is not a separate ext4 partition; leaving it untouched"; return 1; }
-  else
-    # Reject root-overlay data before changing any partition geometry.
-    verify_unmounted_opt || return 1
-    BOOT_PARTITION=$(find_boot_partition) || { fail "cannot identify the boot partition"; return 1; }
-    DISK=$(partition_disk "$BOOT_PARTITION") || return 1
-    [ -b "$DISK" ] || { fail "$DISK is not a block device"; return 1; }
-    PART=$(find_labeled_partition) || { fail "ambiguous or unsafe opt/optdata labels; existing partitions preserved"; return 1; }
-    if [ -z "$PART" ]; then
-      PART=$(create_data_partition) || return 1
-    fi
-    [ "$(filesystem_type "$PART")" = ext4 ] || { fail "$PART is not ext4; refusing to format an existing partition"; return 1; }
-    mkdir -p /opt || return 1
-    verify_unmounted_opt || return 1
-    mount -t ext4 "$PART" /opt || { fail "mounting $PART at /opt failed"; return 1; }
-    verify_opt_mount || { fail "/opt mount verification failed"; return 1; }
-  fi
-  configure_storage && configure_swap || return 1
-  echo "99-expand-data: verified $PART at /opt; Docker storage and swap configured"
+  local result
+  mkdir -p /var/lock || return 1
+  mkdir /var/lock/m28c-opt-init 2>/dev/null || { fail "storage initialization already locked"; return 1; }
+  initialize_storage "$@"
+  result=$?
+  rmdir /var/lock/m28c-opt-init || return 1
+  return "$result"
 }
 
 main "$@"

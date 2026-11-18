@@ -2,7 +2,7 @@
 
 锁定 Docker 29.6.1 默认通过 legacy iptables 建立规则，导致 LuCI 提示旧版规则与 nftables 混用。本构建把 Docker 默认后端改为原生 nftables，保留 `iptables=1` 和 `ip6tables` 原有含义；没有通过关闭 Docker 防火墙或隐藏 LuCI 提示绕过问题。
 
-`scripts/customize-docker.py` 在扫描包元数据之前修改锁定 `packages/utils/dockerd`。修改前核对源文件 SHA256 和唯一锚点，重复执行结果一致，上游漂移会停止构建。包版本为 `29.6.1-1.m28c1`，匹配 IPK 与镜像都安装同一套启动脚本、首启策略、DNS helper 和 nft include，避免只覆盖镜像而遗漏匹配软件包。
+`scripts/customize-docker.py` 在扫描包元数据之前修改锁定 `packages/utils/dockerd`。修改前核对源文件 SHA256 和唯一锚点，重复执行结果一致，上游漂移会停止构建。包版本为 `29.6.1-1.m28c2`，匹配 IPK 与镜像都安装同一套启动脚本、首启策略、DNS helper 和 nft include，避免只覆盖镜像而遗漏匹配软件包。
 
 ## 默认网络策略
 
@@ -16,15 +16,21 @@
 
 ## 配置兼容
 
-普通 DockerMan/UCI 参数、代理、data-root 和自定义 DNS 都继续使用原配置生成路径。有效的 `alt_config_file` 按原逻辑直接使用，自动默认策略不会覆盖该模式。保留升级的 #110 配置若缺少 `firewall_backend`，首启会在默认阻断配置、LAN/WAN zone 和网络满足条件时补为 `nftables`，同时建立策略；显式选择的其他后端保持不变。检测到已有非空 Swarm 数据、非默认设备、未转换的 legacy 限制或缺失 LAN/WAN zone 时不擅自迁移，记录日志，等待用户选择支持的后端和策略。
+普通 DockerMan/UCI 参数、代理、data-root 和自定义 DNS 都继续使用原配置生成路径。有效的 `alt_config_file` 按原逻辑直接使用，自动默认策略不会覆盖该模式；启动前会读取其中实际的 `data-root` 并进行下述存储检查，未指定时按 Docker 默认的 `/var/lib/docker` 检查，不套用 UCI 的 `/opt/docker`。备用 JSON 无法解析或 `data-root` 类型不合法时拒绝启动。保留升级的 #110 配置若缺少 `firewall_backend`，首启会在默认阻断配置、LAN/WAN zone 和网络满足条件时补为 `nftables`，同时建立策略；显式选择的其他后端保持不变。检测到已有非空 Swarm 数据、非默认设备、未转换的 legacy 限制或缺失 LAN/WAN zone 时不擅自迁移，记录日志，等待用户选择支持的后端和策略。
 
 仅在原生 nftables 且用户未配置 `globals.dns` 时生成 DNS：优先取用户 `bip` 的 IPv4 网关；否则取已存在 `docker0` 的 IPv4 地址；首次启动桥尚不存在则使用当前 LAN 地址，避免猜测 Docker 自动分配的网段。找不到合法地址时不猜测公共 DNS，记录日志并要求明确配置。此逻辑不写死设备的 LAN 地址、UUID 或 `172.17.0.1`。若调整 dnsmasq 监听范围，仍需确保选中的地址可供容器查询。
 
 旧 `blocked_interfaces` 和 `extra_iptables_args` 是 legacy helper 参数。默认 `docker0` / `wan` 已由 fw4 策略承接；其他阻断接口、设备或附加 iptables 参数不会悄悄忽略，nft 模式会拒绝启动并记录原因。应先将其意图转换为 fw4 策略，再移除对应旧参数。init 的 start/reload 路径会传播配置失败，不会继续启动残留配置。
 
+## `/opt` 启动条件
+
+从 `29.6.1-1.m28c2` 开始，Docker 的 start/reload 均核对实际数据目录。目录位于 `/opt`（包括指向该目录的符号链接）时，`99-expand-data` 必须已经成功完成并移除，且 `/opt` 必须是唯一、可写、完整的独立 ext4 数据分区挂载。检查使用内核 mountinfo 与 sysfs 分区身份，拒绝把根 overlay 当作 `/opt`、复用 `/`/`/rom`/`/overlay` 的设备、把子目录 bind 到 `/opt`、重复或异常挂载记录，以及覆盖实际 data-root 的异盘或错目录挂载。Docker 为 shared propagation 创建的 data-root self-bind，只有同一 ext4 设备、可写且分区内相对路径完全一致时允许；容器在 data-root 下创建的正常 overlay 挂载也不会阻止 reload。
+
+新刷系统由存储初始化器清空指定系统盘数据分区并挂载 `/opt`，不创建 swap；初始化未完成时 Docker 记录原因并停止，避免再次将容器数据写入根 overlay。Docker 检查本身不格式化、不挂载、不创建目录，也不自动重试或修复。用户设置的 `/opt` 之外数据目录保持可用；独立 ext4 `/opt` 不强制来自系统盘。若 UCI 配置文件不存在，也会检查 Docker 默认 `/etc/docker/daemon.json` 中的数据目录。
+
 ## 验证与范围
 
-回归测试执行实际补丁后的 shell 函数，覆盖普通参数/代理、自定义 DNS/bip、当前桥及 LAN 回退、备用 JSON、旧后端、拒绝不支持的旧规则、首启顺序、幂等及保留用户策略；另核对匹配 IPK 安装路径、版本和源文件漂移拒绝。
+回归测试执行实际补丁后的 shell 函数，覆盖普通参数/代理、自定义 DNS/bip、当前桥及 LAN 回退、备用 JSON、旧后端、拒绝不支持的旧规则、首启顺序、幂等及保留用户策略；另核对匹配 IPK 安装路径、版本和源文件漂移拒绝。存储回归覆盖初始化未完成、缺失/只读/overlay/bind/重复挂载、系统分区复用、非分区设备、data-root 被子挂载覆盖、合法的 Docker self-bind/正常容器子挂载、外部自定义目录及备用 JSON 的真实目录。
 
 #110 设备端同类修复已实际验证容器 HTTPS、直接出网、LAN 发布端口和 legacy 有效规则清零；本次构建改动仍须以新构建实际镜像/IPK验收为准，不能将原设备测试当成新镜像验证。Docker 29 的原生 nftables 后端官方仍标为实验性，不支持 Swarm。自动策略仅覆盖默认 Docker bridge，未声称支持所有自定义 bridge、IPv6 容器或任意用户负载。
 

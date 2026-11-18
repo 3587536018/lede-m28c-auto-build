@@ -2,20 +2,20 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-m28c-fan
 PKG_VERSION:=2026.11.16
-PKG_RELEASE:=3
+PKG_RELEASE:=3.m28c1
 PKG_LICENSE:=Apache-2.0
 PKG_MAINTAINER:=OpenWrt LuCI community
 
 include $(INCLUDE_DIR)/package.mk
 
-# The supplied IPK already contains its final JS and shell files. Install their
-# original bytes; do not run LuCI's JS minifier or version substitution again.
+# Preserve original runtime files and the declared UI text derivative exactly;
+# do not run LuCI's JS minifier or version substitution again.
 define Package/luci-app-m28c-fan
   SECTION:=luci
   CATEGORY:=LuCI
   SUBMENU:=3. Applications
   TITLE:=MangoPi M28C PWM fan control
-  VERSION:=2026.11.16-r3
+  VERSION:=2026.11.16-r3.m28c1
   PKGARCH:=all
   DEPENDS:=+libc +luci-base
   PROVIDES:=luci-app-m28c-fan-any
@@ -24,6 +24,7 @@ endef
 define Package/luci-app-m28c-fan/description
   User-supplied M28C PWM fan controller and Chinese LuCI settings page.
   Original package identity and payload hashes are recorded in SOURCE.json.
+  UI-CHANGES.json records the deterministic status-text-only derivative.
 endef
 
 define Package/luci-app-m28c-fan/conffiles

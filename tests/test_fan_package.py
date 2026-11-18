@@ -29,13 +29,14 @@ class FanPackageTests(unittest.TestCase):
         self.package = self.root / "package"
         shutil.copytree(FAN.PACKAGE, self.package)
         self.source = json.loads((self.package / "SOURCE.json").read_text(encoding="utf-8"))
+        self.verified = FAN.verify_source(self.package)
         self.image = self.root / "lede/build_dir/target-test/root-rockchip"
         shutil.copytree(self.package / "files", self.image)
         for name, record in self.source["files"].items():
             (self.image / name).chmod(int(record["mode"], 8))
         self.info = self.image / "usr/lib/opkg/info"
         self.info.mkdir(parents=True)
-        self.control = self.source["control"].copy()
+        self.control = self.verified["installed_control"].copy()
         self.control["Source"] = "package/custom/" + FAN.NAME
         self.write_control()
         (self.info / (FAN.NAME + ".conffiles")).write_text("/etc/config/m28c_fan\n", encoding="utf-8")
@@ -61,7 +62,11 @@ class FanPackageTests(unittest.TestCase):
         source = FAN.verify_source(self.package)
         self.assertEqual(source["sha256"], "4f43ab3d4e8b190beed27915fc4ab8ed26bfb29c46e6f11f82bcd557e0840b00")
         self.assertEqual(source["control"]["Version"], "2026.11.16-r3")
+        self.assertEqual(source["installed_control"]["Version"], "2026.11.16-r3.m28c1")
         self.assertEqual(len(source["files"]), 7)
+        changed = {name for name in source["files"]
+                   if source["files"][name] != source["installed_files"][name]}
+        self.assertEqual(changed, {FAN.UI_PATH})
         menu = json.loads((self.package / "files/usr/share/luci/menu.d/luci-app-m28c-fan.json").read_bytes())
         self.assertEqual(menu["admin/system/m28c-fan"]["title"], "风扇控制")
 
@@ -86,6 +91,54 @@ class FanPackageTests(unittest.TestCase):
         worker.write_bytes(original)
         (self.package / "files/private-settings").write_bytes(b"not part of the supplied IPK")
         with self.assertRaisesRegex(ValueError, "file set"):
+            FAN.verify_source(self.package)
+
+    def test_undeclared_ui_edit_is_rejected(self):
+        ui = self.package / "files" / FAN.UI_PATH
+        ui.write_bytes(ui.read_bytes() + b"\nwindow.unreviewed = true;\n")
+        with self.assertRaisesRegex(ValueError, "payload differs"):
+            FAN.verify_source(self.package)
+
+    def test_ui_derivative_requires_exact_original_identity_and_output(self):
+        path = self.package / "UI-CHANGES.json"
+        original = json.loads(path.read_text(encoding="utf-8"))
+        for key, value in (("source_archive_sha256", "0" * 64),
+                           ("source_version", "2026.11.16-r2"),
+                           ("version", "2026.11.16-r3"),
+                           ("path", "usr/sbin/m28c-fan-control"),
+                           ("input_sha256", "0" * 64),
+                           ("output_sha256", "0" * 64)):
+            with self.subTest(key=key):
+                record = {**original, key: value}
+                path.write_text(json.dumps(record), encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, "UI derivative"):
+                    FAN.verify_source(self.package)
+
+    def test_ui_record_cannot_inject_code_or_change_nontranslated_values(self):
+        path = self.package / "UI-CHANGES.json"
+        original = path.read_bytes()
+        mutations = [
+            {"after": "'); alert(1); _('injected"},
+            {"after": "unsafe\\x27 escape"},
+            {"before": "m28c_fan"},
+            {"occurrences": 1000},
+        ]
+        for mutation in mutations:
+            with self.subTest(mutation=mutation):
+                record = json.loads(original)
+                record["replacements"][0].update(mutation)
+                path.write_text(json.dumps(record), encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, "UI.*replacement"):
+                    FAN.verify_source(self.package)
+        record = json.loads(original)
+        record["replacements"].append(record["replacements"][0])
+        path.write_text(json.dumps(record), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "duplicate"):
+            FAN.verify_source(self.package)
+
+    def test_missing_derivative_record_is_rejected(self):
+        (self.package / "UI-CHANGES.json").unlink()
+        with self.assertRaisesRegex(ValueError, "regular package file"):
             FAN.verify_source(self.package)
 
     def test_forged_control_or_script_record_is_rejected(self):
@@ -119,6 +172,13 @@ class FanPackageTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Image fan payload differs"):
             FAN.verify_image(self.image, self.package)
 
+    def test_original_ui_cannot_silently_replace_declared_derivative_in_image(self):
+        outer = FAN.tar_files((self.package / "original.ipk").read_bytes())
+        original_ui = FAN.tar_files(outer["data.tar.gz"][0])[FAN.UI_PATH][0]
+        (self.image / FAN.UI_PATH).write_bytes(original_ui)
+        with self.assertRaisesRegex(ValueError, "Image fan payload differs"):
+            FAN.verify_image(self.image, self.package)
+
     def test_missing_file_is_rejected_in_image(self):
         (self.image / "etc/uci-defaults/90-m28c-fan").unlink()
         with self.assertRaisesRegex(ValueError, "Missing regular package file"):
@@ -131,6 +191,7 @@ class FanPackageTests(unittest.TestCase):
 
     def test_wrong_installed_identity_or_dependencies_are_rejected(self):
         for field, value in (("Version", "2026.11.16-r2"), ("Architecture", "x86_64"),
+                             ("Version", "2026.11.16-r3"),
                              ("Source", "feeds/other/luci-app-m28c-fan"),
                              ("Provides", ""), ("Depends", "libc")):
             with self.subTest(field=field):
@@ -207,12 +268,13 @@ class FanPackageTests(unittest.TestCase):
         result = subprocess.run([make, "--no-print-directory", "TOPDIR=.", "package-test"],
                                 cwd=self.package, capture_output=True, text=True, timeout=30)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        for name, record in self.source["files"].items():
+        for name, record in self.verified["installed_files"].items():
             path = self.package / "image" / name
             self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(), record["sha256"], name)
             if os.name != "nt":
                 self.assertEqual(path.stat().st_mode & 0o7777, int(record["mode"], 8), name)
-        self.assertEqual((self.package / "tested-version").read_text().strip(), self.source["control"]["Version"])
+        self.assertEqual((self.package / "tested-version").read_text().strip(),
+                         self.verified["installed_control"]["Version"])
         self.assertEqual((self.package / "tested-architecture").read_text().strip(), "all")
         self.assertEqual(set((self.package / "tested-depends").read_text().split()), {"+libc", "+luci-base"})
         self.assertEqual((self.package / "tested-provides").read_text().strip(), "luci-app-m28c-fan-any")

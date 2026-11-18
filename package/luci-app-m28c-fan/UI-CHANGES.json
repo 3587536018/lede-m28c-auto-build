@@ -1,0 +1,138 @@
+{
+  "schema": 1,
+  "kind": "luci-translated-text-replacements",
+  "source_archive_sha256": "4f43ab3d4e8b190beed27915fc4ab8ed26bfb29c46e6f11f82bcd557e0840b00",
+  "source_version": "2026.11.16-r3",
+  "version": "2026.11.16-r3.m28c1",
+  "path": "www/luci-static/resources/view/m28c-fan/settings.js",
+  "reason": "Report commanded PWM without claiming measured fan rotation; no RPM feedback is available. Controller behavior is unchanged.",
+  "input_sha256": "f7ee9982620a500b95ed21143c8af1b188c1298fe96a736fd6bd1f5129338dc7",
+  "output_sha256": "2594261dcb598454506dcd59934fc1761ccb8a2714b8dbf0b1b01d1ecfc4bfad",
+  "replacements": [
+    {
+      "before": "自动温控运行中，升温加速、降温缓降。",
+      "after": "自动温控运行中，按 CPU 温度调整 PWM 指令。",
+      "occurrences": 1
+    },
+    {
+      "before": "温度低于起转温度，风扇已停转。",
+      "after": "温度低于起始温度，已请求 0% PWM；无法确认风扇是否停转。",
+      "occurrences": 1
+    },
+    {
+      "before": "手动输出运行中，CPU 高温保护仍然生效。",
+      "after": "正在请求手动 PWM 输出，CPU 高温保护仍然生效。",
+      "occurrences": 1
+    },
+    {
+      "before": "CPU 已达到强制全速温度，风扇全速运行。",
+      "after": "CPU 已达到保护温度，已请求 100% PWM；实际转速未测量。",
+      "occurrences": 1
+    },
+    {
+      "before": "CPU 温度读取失败，已请求全速保护。",
+      "after": "CPU 温度读取失败，已请求 100% PWM；实际转速未测量。",
+      "occurrences": 1
+    },
+    {
+      "before": "风扇服务已停止，正常退出保持最低输出，超温或故障时全速保护。",
+      "after": "风扇服务已停止；退出时请求最低输出，超温或故障时请求 100% PWM。",
+      "occurrences": 1
+    },
+    {
+      "before": "正在以最低输出起转，随后按设定模式调速。",
+      "after": "正在请求最低 PWM 输出，1 秒后按设定模式调节。",
+      "occurrences": 1
+    },
+    {
+      "before": "最低稳定输出需为 5–100% 的整数。",
+      "after": "最低非零输出需为 5–100% 的整数。",
+      "occurrences": 1
+    },
+    {
+      "before": "每个点的输出需介于最低稳定输出与 100% 之间。",
+      "after": "每个点的输出需介于最低非零输出与 100% 之间。",
+      "occurrences": 1
+    },
+    {
+      "before": "强制全速温度需为 60–100°C 的整数。",
+      "after": "强制 100% 输出温度需为 60–100°C 的整数。",
+      "occurrences": 1
+    },
+    {
+      "before": "最低稳定输出（%）",
+      "after": "最低非零输出（%）",
+      "occurrences": 2
+    },
+    {
+      "before": "风扇输出",
+      "after": "PWM 指令",
+      "occurrences": 1
+    },
+    {
+      "before": "PWM 输出",
+      "after": "PWM 指令",
+      "occurrences": 1
+    },
+    {
+      "before": "输出（%）",
+      "after": "PWM 指令（%）",
+      "occurrences": 1
+    },
+    {
+      "before": "强制全速温度至少应高于第四个点 2°C。",
+      "after": "强制 100% 输出温度至少应高于第四个点 2°C。",
+      "occurrences": 1
+    },
+    {
+      "before": "%d°C 全速",
+      "after": "%d°C 请求 100%%",
+      "occurrences": 1
+    },
+    {
+      "before": "低于 %d°C 停转，达到 %d°C 起转。",
+      "after": "低于 %d°C 请求 0%% PWM，达到 %d°C 按曲线输出。",
+      "occurrences": 1
+    },
+    {
+      "before": "超过第四个点后保持 %d%%，达到 %d°C 强制全速。",
+      "after": "超过第四个点后请求 %d%% PWM，达到 %d°C 请求 100%% PWM。",
+      "occurrences": 1
+    },
+    {
+      "before": "自动温控与手动 PWM 输出。温度来自 SoC，不代表 5G 模块温度。保存并应用后生效。",
+      "after": "自动温控与手动 PWM 指令。显示百分比为控制指令，未接入转速反馈，不能据此确认风扇转动或停止。温度来自 SoC，不代表 5G 模块温度。保存并应用后生效。",
+      "occurrences": 1
+    },
+    {
+      "before": "0 为停转；非零输出不低于最低稳定输出。CPU 达到强制全速温度时仍会全速。",
+      "after": "0 表示请求 0% PWM，不代表已确认停转；非零指令不低于最低非零输出。CPU 达到保护温度时请求 100% PWM。",
+      "occurrences": 1
+    },
+    {
+      "before": "默认 30%，已实测持续运行。降低前请确认风扇不会停转；起转时先按最低输出运行 1 秒。",
+      "after": "默认 30%，需要按实际风扇确认起转和持续运行能力；从 0% 转为非零指令时，先请求此输出 1 秒。",
+      "occurrences": 1
+    },
+    {
+      "before": "低温停转",
+      "after": "低温请求 0% 输出",
+      "occurrences": 1
+    },
+    {
+      "before": "低于第一个温度点时停转，达到该点时先按最低输出运行 1 秒，再按曲线调速。关闭后保持第一个点的输出。",
+      "after": "低于第一个温度点时请求 0% PWM；实际是否停转取决于风扇和接线。达到该点时先请求最低非零输出 1 秒，再按曲线输出。关闭后请求第一个点的输出。",
+      "occurrences": 1
+    },
+    {
+      "before": "强制全速温度（°C）",
+      "after": "强制 100% 输出温度（°C）",
+      "occurrences": 2
+    },
+    {
+      "before": "升温立即响应，降温每次最多降 10 个百分点。读不到 CPU 温度时全速运行。",
+      "after": "升温立即提高 PWM 指令，降温每次最多降 10 个百分点。读不到 CPU 温度时请求 100% PWM。",
+      "occurrences": 1
+    }
+  ]
+}

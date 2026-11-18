@@ -105,6 +105,7 @@ jobs:
           cp "$target"/{config.buildinfo,feeds.buildinfo,version.buildinfo,profiles.json} release_assets/
           cp sources.lock.json release_assets/
           cp package/luci-app-m28c-fan/SOURCE.json release_assets/fan-package-source.json
+          cp package/luci-app-m28c-fan/UI-CHANGES.json release_assets/fan-ui-changes.json
           git rev-parse HEAD > release_assets/customization.commit
           python3 scripts/verify-firmware.py release_assets/*.img.gz
           python3 scripts/prepare-sources.py --verify-manifest "$target"/openwrt-rockchip-armv8-widora_mangopi-m28c.manifest
@@ -219,4 +220,5 @@ jobs:
             release_assets/sources.lock.json
             release_assets/customization.commit
             release_assets/fan-package-source.json
+            release_assets/fan-ui-changes.json
             release_assets/sha256sums

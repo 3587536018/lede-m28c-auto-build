@@ -6,11 +6,23 @@
     {
       "path": "files/dockerd.init",
       "sha256": "36573a8260be9392a9adc1e19a5874480a133681bcfcf08b41a214d2ffbad49b",
-      "patched_sha256": "bea309fbde0aa71e59c5614c6fa097d1310732b9789bfc601a1ab1ec813aa2d0",
+      "patched_sha256": "01719a1163841cc551899ad4cea196c48526b959915e249c33b6d1114f1d7982",
       "replacements": [
         {
           "old": "\tlocal alt_config_file data_root log_level iptables ip6tables bip\n",
           "new": "\tlocal alt_config_file data_root log_level iptables ip6tables bip firewall_backend dns_fallback\n"
+        },
+        {
+          "old": "\t[ -f /etc/config/dockerd ] || {\n",
+          "new": "\t. /usr/libexec/m28c-docker.sh\n\t[ -f /etc/config/dockerd ] || {\n\t\tif [ -f /etc/docker/daemon.json ]; then\n\t\t\tm28c_docker_require_json_storage /etc/docker/daemon.json || return 1\n\t\telse\n\t\t\tm28c_docker_require_storage /var/lib/docker || return 1\n\t\tfi\n"
+        },
+        {
+          "old": "\t\tln -s \"${alt_config_file}\" \"${DOCKERD_CONF}\"\n",
+          "new": "\t\tm28c_docker_require_json_storage \"${alt_config_file}\" || return 1\n\t\tln -s \"${alt_config_file}\" \"${DOCKERD_CONF}\"\n"
+        },
+        {
+          "old": "\tconfig_get data_root globals data_root \"/opt/docker/\"\n",
+          "new": "\tconfig_get data_root globals data_root \"/opt/docker/\"\n\tm28c_docker_require_storage \"${data_root}\" || return 1\n"
         },
         {
           "old": "\tconfig_get_bool ip6tables globals ip6tables \"0\"\n",
@@ -18,7 +30,7 @@
         },
         {
           "old": "\tconfig_get storage_driver globals storage_driver \"\"\n",
-          "new": "\tconfig_get storage_driver globals storage_driver \"\"\n\n\tif [ \"${firewall_backend}\" = \"nftables\" ]; then\n\t\t. /usr/libexec/m28c-docker.sh\n\t\tm28c_docker_validate_policy || return 1\n\t\t[ -n \"${dns}\" ] || dns_fallback=$(m28c_docker_default_dns \"${bip}\")\n\tfi\n"
+          "new": "\tconfig_get storage_driver globals storage_driver \"\"\n\n\tif [ \"${firewall_backend}\" = \"nftables\" ]; then\n\t\tm28c_docker_validate_policy || return 1\n\t\t[ -n \"${dns}\" ] || dns_fallback=$(m28c_docker_default_dns \"${bip}\")\n\tfi\n"
         },
         {
           "old": "\tjson_add_boolean \"ip6tables\" \"${ip6tables}\"\n",
@@ -68,11 +80,11 @@
     {
       "path": "Makefile",
       "sha256": "44aea8585e78623c5904e408c7281eb37d048f55c5eb2a4e4b5b294fd46c39e7",
-      "patched_sha256": "dcba1e18ca65d3490e610d6413a4151e9a9e01246b7494995bf6da3f0e50b05f",
+      "patched_sha256": "7cd20e55274e5b57b4d36c23aa9ef899982c96f53cd8e6c0fb16e9b05b31c069",
       "replacements": [
         {
           "old": "PKG_RELEASE:=1\n",
-          "new": "PKG_RELEASE:=1.m28c1\n"
+          "new": "PKG_RELEASE:=1.m28c2\n"
         },
         {
           "old": "    +containerd \\\n",

@@ -51,6 +51,7 @@ class AutomountSourceTests(unittest.TestCase):
         self.assertEqual(before, self.snapshot())
         makefile = (self.root / PATHS["Makefile"]).read_text()
         self.assertIn("PKG_RELEASE:=41.m28c1", makefile)
+        self.assertIn("PKG_RELEASE:=3.m28c2", (self.root / PATHS["fstools.Makefile"]).read_text())
         self.assertNotIn("15-automount", makefile)
         self.assertFalse((self.root / PATHS["15-automount"]).exists())
         self.assertFalse((self.root / PATHS["zzz-move-automount"]).exists())
@@ -92,10 +93,13 @@ class AutomountSourceTests(unittest.TestCase):
         subprocess.run([SHELL, str(script)], check=True, capture_output=True)
         self.assertIn("option auto_mount '1'", config.read_text())
         self.assertIn("option anon_mount '0'", config.read_text())
+        self.assertIn("option auto_swap '0'", config.read_text())
+        self.assertIn("option anon_swap '0'", config.read_text())
         self.assertNotIn("config mount", config.read_text())
-        config.write_text("# user's disabled and explicit UUID mounts\n", newline="\n")
+        existing = "# user's disabled and explicit UUID mounts\nconfig global\n    option auto_swap '1'\n"
+        config.write_text(existing, newline="\n")
         subprocess.run([SHELL, str(script)], check=True, capture_output=True)
-        self.assertEqual(config.read_text(), "# user's disabled and explicit UUID mounts\n")
+        self.assertEqual(config.read_text(), existing)
 
     @unittest.skipUnless(SHELL, "Bash not available")
     def test_busy_owned_remove_skips_native_detach_and_unowned_remove_still_works(self):

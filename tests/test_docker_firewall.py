@@ -49,7 +49,7 @@ class PackagePatchTests(unittest.TestCase):
     def test_patch_reaches_matching_ipk_install_and_has_distinct_release(self):
         self.apply()
         make = (self.package / "Makefile").read_text()
-        self.assertIn("PKG_VERSION:=29.6.1\nPKG_RELEASE:=1.m28c1\n", make)
+        self.assertIn("PKG_VERSION:=29.6.1\nPKG_RELEASE:=1.m28c2\n", make)
         for path in ("files/dockerd.init", "files/m28c-docker.sh", "files/fw4-lan-published.nft",
                      "files/90-m28c-docker-nftables"):
             self.assertIn("./" + path, make)
@@ -137,6 +137,17 @@ cfg[firewall.wan.name]=wan
 
 JSON_HARNESS = r'''
 json_init() { json_lines=""; json_key=""; }
+json_load() { json_document=$1; printf '%s' "$1" | python -c 'import json,sys; assert isinstance(json.load(sys.stdin),dict)' 2>/dev/null; }
+json_get_type() {
+    local value
+    value=$(printf '%s' "$json_document" | python -c 'import json,sys; d=json.load(sys.stdin); v=d.get("data-root"); print("" if "data-root" not in d else "string" if isinstance(v,str) else "other")') || return 1
+    printf -v "$1" '%s' "$value"
+}
+json_get_var() {
+    local value
+    value=$(printf '%s' "$json_document" | python -c 'import json,sys; print(json.load(sys.stdin)["data-root"])') || return 1
+    printf -v "$1" '%s' "$value"
+}
 json_add_string() { json_lines+="${json_key}${1}=${2}"$'\n'; }
 json_add_boolean() { json_add_string "$@"; }
 json_add_array() { json_key="$1[]"; }
@@ -162,6 +173,19 @@ class DockerRuntimeTests(unittest.TestCase):
             CUSTOMIZE.customize(self.root)
         self.init = (package / "files/dockerd.init").read_text()
         self.helper = (PATCH / "files/m28c-docker.sh").read_text().replace(". /lib/functions/network.sh", ": # mocked network API")
+        self.helper = self.helper.replace('. /usr/share/libubox/jshn.sh', ': # mocked JSON API')
+        self.mountinfo = self.root / "mountinfo"
+        self.base_mountinfo = "30 1 0:25 / / rw - overlay overlay rw\n31 30 179:2 / /rom ro - squashfs /dev/root ro\n32 30 7:0 / /overlay rw - ext4 /dev/loop0 rw\n"
+        self.opt_mount = "40 30 179:3 / /opt rw - ext4 /dev/mmcblk1p3 rw\n"
+        self.mountinfo.write_text(self.base_mountinfo + self.opt_mount)
+        sysfs = self.root / "sys-block/179_3"
+        sysfs.mkdir(parents=True)
+        (sysfs / "partition").write_text("3\n")
+        (sysfs / "dev").write_text("179:3\n")
+        self.pending_storage = self.root / "pending-storage"
+        self.helper = self.helper.replace('/proc/self/mountinfo', f"'{self.mountinfo.as_posix()}'")
+        self.helper = self.helper.replace('/sys/dev/block/$device', self.root.as_posix() + '/sys-block/${device/:/_}')
+        self.helper = self.helper.replace('/etc/uci-defaults/99-expand-data', f"'{self.pending_storage.as_posix()}'")
         self.defaults = (PATCH / "files/90-m28c-docker-nftables").read_text().replace(". /lib/functions.sh", ": # mocked UCI API")
         self.defaults = self.defaults.replace('. /usr/libexec/m28c-docker.sh', ': # helper loaded by harness')
         self.init = self.init.replace('. /usr/share/libubox/jshn.sh', ': # mocked JSON API')
@@ -178,6 +202,131 @@ class DockerRuntimeTests(unittest.TestCase):
                                 capture_output=True, text=True, encoding="utf-8", timeout=20)
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
         return result.stdout, result.stderr
+
+    def assert_storage_refused(self):
+        out, err = self.shell('start_service && exit 97\nreload_service && exit 98\ntrue')
+        self.assertNotIn("STARTED", out)
+        self.assertNotIn("RELOADED", out)
+        self.assertIn("Docker", err)
+        return out, err
+
+    def test_pending_storage_initialization_blocks_start_and_reload(self):
+        self.pending_storage.write_text("pending")
+        _, err = self.assert_storage_refused()
+        self.assertIn("pending", err)
+
+    def test_missing_overlay_bind_readonly_system_or_duplicate_opt_is_refused(self):
+        invalid = (
+            "",
+            self.opt_mount.replace("ext4", "overlay"),
+            self.opt_mount.replace("179:3 / /opt", "179:3 /docker /opt"),
+            self.opt_mount.replace("/opt rw", "/opt ro"),
+            self.opt_mount.replace("179:3", "179:2"),
+            self.opt_mount.replace("179:3", "7:0"),
+            self.opt_mount + self.opt_mount.replace("40 30", "41 30"),
+            self.opt_mount + "malformed mount record\n",
+            self.opt_mount + "41 40 0:25 /data /opt/docker rw - overlay overlay rw\n",
+        )
+        for record in invalid:
+            with self.subTest(record=record):
+                self.mountinfo.write_text(self.base_mountinfo + record)
+                self.assert_storage_refused()
+
+    def test_mountinfo_escaped_path_cannot_hide_data_root_overmount(self):
+        self.mountinfo.write_text(self.base_mountinfo + self.opt_mount +
+                                  "41 40 0:25 /data /opt/docker\\040data rw - overlay overlay rw\n")
+        out, _ = self.shell("cfg[dockerd.globals.data_root]='/opt/docker data'\nstart_service && exit 97\ntrue")
+        self.assertNotIn("STARTED", out)
+
+    def test_alias_into_opt_and_opt_alias_escape_are_checked(self):
+        self.mountinfo.write_text(self.base_mountinfo)
+        out, err = self.shell("m28c_docker_data_path() { printf '/opt/docker'; }\ncfg[dockerd.globals.data_root]=/srv/alias\nstart_service && exit 97\ntrue")
+        self.assertNotIn("STARTED", out)
+        self.assertIn("independent", err)
+        out, err = self.shell("m28c_docker_data_path() { printf '/tmp/docker'; }\nstart_service && exit 97\ntrue")
+        self.assertNotIn("STARTED", out)
+        self.assertIn("outside", err)
+
+    def test_missing_uci_checks_docker_default_json(self):
+        daemon = self.root / "default-daemon.json"
+        daemon.write_text('{"data-root":"/opt/docker"}')
+        self.init = self.init.replace('true || {', 'false || {', 1)
+        self.init = self.init.replace('/etc/docker/daemon.json', "'" + daemon.as_posix() + "'")
+        self.pending_storage.write_text("pending")
+        out, _ = self.shell('start_service && exit 97\ntrue')
+        self.assertNotIn("STARTED", out)
+        daemon.write_text('{"data-root":"/srv/docker"}')
+        out, _ = self.shell('start_service || exit $?')
+        self.assertIn("STARTED", out)
+        daemon.unlink()
+        out, _ = self.shell('start_service || exit $?')
+        self.assertIn("STARTED", out)
+
+    def test_whole_disk_or_fake_partition_is_refused(self):
+        partition = self.root / "sys-block/179_3/partition"
+        partition.unlink()
+        self.assert_storage_refused()
+        partition.write_text("3\n")
+        (partition.parent / "dev").write_text("179:99\n")
+        self.assert_storage_refused()
+
+    def test_valid_opt_partition_allows_start_reload_and_container_submounts(self):
+        self.mountinfo.write_text(self.base_mountinfo + self.opt_mount +
+                                  "41 40 0:26 / /opt/docker/overlay2/container/merged rw - overlay overlay rw\n")
+        out, _ = self.shell('start_service || exit $?\nreload_service || exit $?')
+        self.assertEqual(["STARTED", "RELOADED"], out.splitlines())
+
+    def test_docker_data_root_self_bind_allows_reload(self):
+        binding = "41 40 179:3 /docker /opt/docker rw shared:1 - ext4 /dev/mmcblk1p3 rw\n"
+        for records in (self.opt_mount + binding, binding + self.opt_mount):
+            with self.subTest(records=records):
+                self.mountinfo.write_text(self.base_mountinfo + records)
+                out, _ = self.shell('start_service || exit $?\nreload_service || exit $?')
+                self.assertEqual(["STARTED", "RELOADED"], out.splitlines())
+        for binding in (
+            "41 40 179:3 /other /opt/docker rw - ext4 /dev/mmcblk1p3 rw\n",
+            "41 40 179:4 /docker /opt/docker rw - ext4 /dev/mmcblk1p4 rw\n",
+            "41 40 179:3 /docker /opt/docker ro - ext4 /dev/mmcblk1p3 rw\n",
+            "41 40 179:3 /docker /opt/docker rw - ext4 /dev/mmcblk1p3 ro\n",
+        ):
+            with self.subTest(binding=binding):
+                self.mountinfo.write_text(self.base_mountinfo + self.opt_mount + binding)
+                self.assert_storage_refused()
+
+    def test_outside_opt_custom_data_root_does_not_require_opt(self):
+        self.mountinfo.write_text(self.base_mountinfo)
+        self.pending_storage.write_text("pending")
+        out, _ = self.shell('cfg[dockerd.globals.data_root]=/srv/docker\nstart_service || exit $?\ncat "$DOCKERD_CONF"')
+        self.assertIn("STARTED", out)
+        self.assertIn("data-root=/srv/docker", out)
+
+    def test_alternate_json_effective_data_root_is_checked(self):
+        alternate = self.root / "user-daemon.json"
+        self.mountinfo.write_text(self.base_mountinfo)
+        self.pending_storage.write_text("pending")
+        for content, allowed in (({"data-root": "/opt/custom"}, False),
+                                 ({"data-root": "/srv/docker"}, True), ({}, True),
+                                 ({"data-root": 7}, False), ({"data-root": ""}, False)):
+            with self.subTest(content=content):
+                alternate.write_text(json.dumps(content))
+                script = f"cfg[dockerd.globals.alt_config_file]='{alternate.as_posix()}'\n"
+                script += 'start_service || exit $?' if allowed else 'start_service && exit 97\nreload_service && exit 98\ntrue'
+                out, _ = self.shell(script)
+                self.assertEqual(allowed, "STARTED" in out)
+                self.assertNotIn("RELOADED", out)
+        alternate.write_text('{"data-root":')
+        out, err = self.shell(f"cfg[dockerd.globals.alt_config_file]='{alternate.as_posix()}'\nstart_service && exit 97\ntrue")
+        self.assertNotIn("STARTED", out)
+        self.assertIn("Cannot parse", err)
+
+    def test_guard_does_not_mount_format_or_create_storage(self):
+        out, _ = self.shell(r'''
+mount() { echo UNEXPECTED_MOUNT; return 99; }
+mkfs() { echo UNEXPECTED_FORMAT; return 99; }
+mkdir() { echo UNEXPECTED_MKDIR; return 99; }
+m28c_docker_require_storage /opt/docker || exit $?
+''')
+        self.assertNotIn("UNEXPECTED", out)
 
     def test_native_backend_preserves_uci_and_proxy_values_and_skips_legacy(self):
         out, err = self.shell(r'''

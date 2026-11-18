@@ -41,7 +41,7 @@ if [ ! -e /etc/config/fstab ] && [ ! -L /etc/config/fstab ]; then
 config global
     option anon_swap '0'
     option anon_mount '0'
-    option auto_swap '1'
+    option auto_swap '0'
     option auto_mount '1'
     option delay_root '5'
     option check_fs '0'
@@ -89,7 +89,7 @@ def customize(root: Path) -> None:
         (fstools / "mount.hotplug", "mount.hotplug", [(HOTPLUG_OLD, HOTPLUG_NEW)]),
         (fstools / "fstab.default", "fstab.default", [(FSTAB_OLD, FSTAB_NEW)]),
         (root / "feeds/packages/net/samba4/files/smb.auto", "smb.auto", [(SAMBA_OLD, SAMBA_NEW)]),
-        (fstools.parent / "Makefile", "fstools.Makefile", [("PKG_RELEASE:=2\n", "PKG_RELEASE:=3.m28c1\n")]),
+        (fstools.parent / "Makefile", "fstools.Makefile", [("PKG_RELEASE:=2\n", "PKG_RELEASE:=3.m28c2\n")]),
         (root / "feeds/packages/net/samba4/Makefile", "samba.Makefile", [("PKG_RELEASE:=$(AUTORELEASE)\n", "PKG_RELEASE:=$(AUTORELEASE).m28c1\n")]),
     ]
     for path, name, replacements in entries:

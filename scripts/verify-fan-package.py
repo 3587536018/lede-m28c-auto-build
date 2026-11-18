@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify the supplied fan IPK, package inputs and installed image contents."""
+"""Verify the original fan IPK, declared UI text derivative and image contents."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ import io
 import json
 import os
 from pathlib import Path, PurePosixPath
+import re
 import stat
 import sys
 import tarfile
@@ -18,6 +19,8 @@ import tarfile
 ROOT = Path(__file__).resolve().parents[1]
 NAME = "luci-app-m28c-fan"
 PACKAGE = ROOT / "package" / NAME
+UI_PATH = "www/luci-static/resources/view/m28c-fan/settings.js"
+DERIVED_VERSION = "2026.11.16-r3.m28c1"
 
 
 def digest(data: bytes) -> str:
@@ -74,6 +77,53 @@ def regular_file(root: Path, name: str) -> Path:
     return path
 
 
+def derive_ui(package: Path, source: dict, original: bytes) -> tuple[bytes, dict]:
+    """Reconstruct the sole permitted derivative from original translated text.
+
+    Replacements cannot contain JavaScript delimiters or escapes. No executable
+    expression, form field, RPC call or control logic can be changed by this
+    format, even if someone updates the declared output digest.
+    """
+    record = json.loads(regular_file(package, "UI-CHANGES.json").read_text(encoding="utf-8"))
+    if (set(record) != {"schema", "kind", "source_archive_sha256", "source_version",
+                        "version", "path", "reason", "input_sha256", "output_sha256",
+                        "replacements"}
+            or record["schema"] != 1 or record["kind"] != "luci-translated-text-replacements"
+            or record["path"] != UI_PATH or record["version"] != DERIVED_VERSION
+            or record["source_archive_sha256"] != source["sha256"]
+            or record["source_version"] != source["control"]["Version"]
+            or record["input_sha256"] != digest(original)):
+        raise ValueError("Invalid fan UI derivative identity or input digest")
+    replacements = record["replacements"]
+    if not isinstance(replacements, list) or not replacements:
+        raise ValueError("Fan UI derivative requires translated-text replacements")
+    text = original.decode("utf-8")
+    updated = text
+    seen = set()
+    for item in replacements:
+        if not isinstance(item, dict) or set(item) != {"before", "after", "occurrences"}:
+            raise ValueError("Invalid fan UI replacement record")
+        before, after, count = item["before"], item["after"], item["occurrences"]
+        if (any(not isinstance(value, str) or not value
+                or any(char in value for char in "'\\\r\n\u2028\u2029")
+                for value in (before, after))
+                or before == after or before in seen
+                or type(count) is not int or count < 1):
+            raise ValueError("Unsafe or duplicate fan UI translated-text replacement")
+        seen.add(before)
+        old, new = "_('" + before + "')", "_('" + after + "')"
+        if text.count(old) != count or updated.count(old) != count:
+            raise ValueError("Fan UI replacement count differs from original")
+        updated = updated.replace(old, new)
+    translated = re.compile(r"_\('(?:[^'\\]|\\.)*'\)")
+    if translated.sub("_('<text>')", text) != translated.sub("_('<text>')", updated):
+        raise ValueError("Fan UI derivative changes executable code")
+    derived = updated.encode("utf-8")
+    if digest(derived) != record["output_sha256"]:
+        raise ValueError("Fan UI derivative output digest differs")
+    return derived, record
+
+
 def verify_source(package: Path = PACKAGE) -> dict:
     source = json.loads((package / "SOURCE.json").read_text(encoding="utf-8"))
     if source.get("schema") != 1 or source.get("archive") != "original.ipk":
@@ -102,30 +152,37 @@ def verify_source(package: Path = PACKAGE) -> dict:
                for name, (data, mode) in payload.items()}
     if records != source["files"]:
         raise ValueError("Original fan payload differs from SOURCE.json")
+    derived_ui, derivative = derive_ui(package, source, payload[UI_PATH][0])
+    expected_payload = dict(payload)
+    expected_payload[UI_PATH] = (derived_ui, payload[UI_PATH][1])
     files_root = package / "files"
     present = {path.relative_to(files_root).as_posix()
                for path in files_root.rglob("*") if path.is_symlink() or not path.is_dir()}
     if present != set(payload):
         raise ValueError("Fan package payload file set differs from original IPK")
-    for name, (data, _) in payload.items():
+    for name, (data, _) in expected_payload.items():
         if regular_file(files_root, name).read_bytes() != data:
-            raise ValueError("Fan package payload differs from original IPK: " + name)
-    return source
+            raise ValueError("Fan package payload differs from verified original/UI derivative: " + name)
+    return {**source, "derivative": derivative,
+            "installed_control": {**source["control"], "Version": DERIVED_VERSION},
+            "installed_files": {
+                name: {"sha256": digest(data), "size": len(data), "mode": f"{mode:04o}"}
+                for name, (data, mode) in expected_payload.items()}}
 
 
 def verify_image(image_root: Path, package: Path = PACKAGE) -> int:
     source = verify_source(package)
-    for name, expected in source["files"].items():
+    for name, expected in source["installed_files"].items():
         path = regular_file(image_root, name)
         data = path.read_bytes()
         if len(data) != expected["size"] or digest(data) != expected["sha256"]:
-            raise ValueError("Image fan payload differs from original IPK: " + name)
+            raise ValueError("Image fan payload differs from verified original/UI derivative: " + name)
         if os.name != "nt" and stat.S_IMODE(path.stat().st_mode) != int(expected["mode"], 8):
             raise ValueError("Image fan file mode differs: " + name)
     info = "usr/lib/opkg/info/" + NAME
     installed = fields(regular_file(image_root, info + ".control").read_bytes())
     for key in ("Package", "Version", "Architecture", "SourceName", "License"):
-        if installed.get(key) != source["control"][key]:
+        if installed.get(key) != source["installed_control"][key]:
             raise ValueError("Installed fan control mismatch: " + key)
     if installed.get("Source") != "package/custom/" + NAME:
         raise ValueError("Installed fan package did not come from the custom package")
@@ -160,10 +217,12 @@ def main() -> None:
         image = candidates[0]
     if image is None:
         source = verify_source(args.package)
-        print(f"Verified original {NAME} {source['control']['Version']} and {len(source['files'])} package files")
+        print(f"Verified original {NAME} {source['control']['Version']}, declared UI derivative "
+              f"{source['installed_control']['Version']} and {len(source['installed_files'])} package files")
     else:
         count = verify_image(image, args.package)
-        print(f"Verified {count} original fan files, installed package identity and fan boot service")
+        print(f"Verified {count} fan files against original/declared UI derivative, "
+              "installed package identity and fan boot service")
 
 
 if __name__ == "__main__":

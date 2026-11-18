@@ -46,6 +46,16 @@ class RuntimeGateTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "differs from patched"):
             GATE.verify(self.lede)
 
+    def test_old_storage_initializer_is_rejected(self):
+        (self.image / "etc/uci-defaults/99-expand-data").write_text("old preserve-data init\n")
+        with self.assertRaisesRegex(ValueError, "differs from patched"):
+            GATE.verify(self.lede)
+
+    def test_device_initialization_state_cannot_be_shipped(self):
+        (self.image / "etc/m28c-opt-initialized").write_text("prepared from a running router\n")
+        with self.assertRaisesRegex(ValueError, "checkpoint must not be shipped"):
+            GATE.verify(self.lede)
+
     def test_legacy_hook_cannot_coexist_with_replacement(self):
         (self.image / "etc/15-automount").write_text("legacy mount\n")
         with self.assertRaisesRegex(ValueError, "Obsolete automount"):

@@ -32,9 +32,17 @@
 例如设备当前已有按 UUID 挂载到 `/mnt/sdcard` 的配置，保留配置升级后仍沿用
 `/mnt/sdcard`，不会另挂一份到 `/mnt/removable/`。
 
-首次启动的 `10-fstab` 只在配置文件不存在时写入原有全局默认值，不再由
-`block detect` 自动为当时插入的卡创建 `enabled=0` 条目。保留配置升级时不会重写
-用户 fstab；`99-expand-data` 继续独立配置系统数据分区 `/opt` 和 swap。
+首次启动的 `10-fstab` 只在配置文件不存在时写入全局默认值：`auto_mount=1`、
+`anon_mount=0`、`auto_swap=0`、`anon_swap=0`。不再由 `block detect` 自动为当时
+插入的卡创建 `enabled=0` 条目，也不自动启用扫描到的 swap。已有用户 fstab 不会
+被 `10-fstab` 覆盖。
+
+本次无 swap 默认值由 `fstools` / `block-mount` 的包 release `3.m28c2` 提供。
+
+系统盘的 `/opt` 由 `99-expand-data` 独立初始化。按当前定制要求，新安装首次启动
+会清空经过核验的系统盘数据分区并创建 ext4 `/opt`，不创建 swap；同一安装的普通
+重启保留此后产生的数据。具体范围和失败处理见 [系统 /opt 初始化策略](OPT-RESET.md)。
+这个重置策略不适用于外置 USB/SD 自动挂载，外置存储仍遵循本文的数据保护规则。
 
 已有旧版自动生成的禁用条目仍视为用户配置；需要用户明确删除或启用，不能由
 新脚本猜测其来源并绕过。匿名挂载不写 UUID 配置，所以设备枚举改变时路径也可能
