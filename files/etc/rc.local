@@ -4,4 +4,13 @@
 # echo 0 > /sys/devices/system/cpu/cpu2/online
 # echo 0 > /sys/devices/system/cpu/cpu3/online
 
+# rcS expands its /etc/rc.d/S* list once, before uci-defaults run, so a
+# service re-enabled during this boot is not started by the normal ordering.
+# OpenClash also owns DNS: without clash dnsmasq cannot resolve anything.
+if [ -x /etc/init.d/openclash ] && [ "$(uci -q get openclash.config.enable)" = '1' ]; then
+	if ! pidof clash >/dev/null 2>&1; then
+		/etc/init.d/openclash start >/dev/null 2>&1 &
+	fi
+fi
+
 exit 0

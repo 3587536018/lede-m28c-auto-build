@@ -1,0 +1,19 @@
+#!/bin/sh
+# Restore OpenClash after a reflash that kept a subscription.
+#
+# The public image deliberately disables openclash so a shared image never
+# ships a half-configured proxy. That default also leaves a router with a
+# kept /etc/openclash without DNS, because dnsmasq forwards every query to
+# clash (127.0.0.1#7874). Re-enable the service only when the owner really
+# has a subscription config on disk. The zzzz- prefix keeps this after
+# zzzz-custom, which is what disables the service on a fresh install.
+[ "$(cat /tmp/sysinfo/board_name 2>/dev/null)" = widora,mangopi-m28c ] || exit 0
+[ -x /etc/init.d/openclash ] || exit 0
+
+set -- /etc/openclash/config/*.yaml
+[ -e "$1" ] || exit 0
+
+uci -q set openclash.config.enable='1'
+uci -q commit openclash 2>/dev/null || true
+/etc/init.d/openclash enable
+exit 0
