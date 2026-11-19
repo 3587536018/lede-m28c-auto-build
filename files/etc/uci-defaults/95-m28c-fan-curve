@@ -1,0 +1,28 @@
+#!/bin/sh
+# M28C public fan curve: 50% floor, one 10 C step per level, 100% at 80 C.
+# The supplied fan package keeps its original bytes; only the running values
+# are adjusted here, after the package's own 90-m28c-fan defaults script.
+[ "$(cat /tmp/sysinfo/board_name 2>/dev/null)" = widora,mangopi-m28c ] || exit 0
+[ -f /etc/config/m28c_fan ] || exit 0
+
+uci -q batch <<'EOF'
+set m28c_fan.fan.mode='auto'
+set m28c_fan.fan.min_speed='50'
+set m28c_fan.fan.manual_speed='50'
+set m28c_fan.fan.speed1='50'
+set m28c_fan.fan.temp1='60'
+set m28c_fan.fan.speed2='75'
+set m28c_fan.fan.temp2='70'
+set m28c_fan.fan.speed3='100'
+set m28c_fan.fan.temp3='80'
+set m28c_fan.fan.speed4='100'
+set m28c_fan.fan.temp4='90'
+set m28c_fan.fan.emergency_temp='95'
+set m28c_fan.fan.fan_stop='1'
+set m28c_fan.fan.period='5'
+EOF
+uci commit m28c_fan
+
+/etc/init.d/m28c-fan enable
+/etc/init.d/m28c-fan reload 2>/dev/null || /etc/init.d/m28c-fan restart 2>/dev/null || true
+exit 0

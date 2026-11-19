@@ -1,0 +1,24 @@
+#!/bin/sh
+# M28C modem status LED: the daemon owns blue:modem, so the stock netdev
+# trigger is released. Sections still bound to that LED are dropped first.
+[ "$(cat /tmp/sysinfo/board_name 2>/dev/null)" = widora,mangopi-m28c ] || exit 0
+[ -e /sys/class/leds/blue:modem ] || exit 0
+
+for section in $(uci -q show system 2>/dev/null | \
+	sed -n "s/^system\.\([A-Za-z0-9_]*\)\.sysfs='blue:modem'$/\1/p"); do
+	uci -q delete "system.$section"
+done
+
+uci -q batch <<'EOF'
+set system.led_modem='led'
+set system.led_modem.name='MODEM'
+set system.led_modem.sysfs='blue:modem'
+set system.led_modem.trigger='none'
+set system.led_modem.default='0'
+EOF
+uci commit system
+
+/etc/init.d/m28c-modem-led enable
+/etc/init.d/led restart 2>/dev/null || true
+/etc/init.d/m28c-modem-led start 2>/dev/null || true
+exit 0

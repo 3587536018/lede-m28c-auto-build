@@ -1,0 +1,105 @@
+#!/bin/sh
+# M28C modem status LED
+#   5G (NR)  -> solid
+#   4G (LTE) -> 1s on / 1s off
+#   no dial  -> off
+#
+# The physical LED is single-colour blue, so the network type is shown by a
+# blink pattern rather than a colour change. The qmodem cell_info cache is
+# preferred; a stale cache falls back to a live query.
+
+LED=/sys/class/leds/blue:modem/brightness
+STATE_FILE=/var/run/m28c-modem-led.state
+POLL=5
+CACHE_MAX_AGE=300
+IFACE_OVERRIDE="$M28C_MODEM_IFACE"
+
+SECTION=""
+CACHE=""
+
+refresh_section() {
+	sections="$(uci -q show qmodem 2>/dev/null | sed -n \
+		-e 's/^qmodem\.\([A-Za-z0-9_]*\)=modem-device$/\1/p' \
+		-e "s/^qmodem\.\([A-Za-z0-9_]*\)='modem-device'$/\1/p")"
+	SECTION="$(printf '%s\n' "$sections" | head -1)"
+	if [ -n "$SECTION" ]; then
+		CACHE="/tmp/cache_cell_info_$SECTION"
+	else
+		CACHE=""
+	fi
+}
+
+iface_ok() {
+	i="$1"
+	[ -e "/sys/class/net/$i" ] || return 1
+	[ "$(cat "/sys/class/net/$i/operstate" 2>/dev/null)" = up ] || return 1
+	ip -4 addr show dev "$i" 2>/dev/null | grep -q 'inet ' && return 0
+	ip -6 addr show dev "$i" 2>/dev/null | grep -q 'scope global' && return 0
+	return 1
+}
+
+link_up() {
+	if [ -n "$IFACE_OVERRIDE" ]; then
+		iface_ok "$IFACE_OVERRIDE"
+		return $?
+	fi
+	for c in wwan0_1 wwan0 usb0; do
+		iface_ok "$c" && return 0
+	done
+	return 1
+}
+
+read_mode() {
+	json=""
+	if [ -n "$CACHE" ] && [ -s "$CACHE" ]; then
+		now=$(date +%s)
+		mtime=$(stat -c %Y "$CACHE" 2>/dev/null)
+		[ -n "$mtime" ] || mtime=0
+		if [ $((now - mtime)) -lt "$CACHE_MAX_AGE" ]; then
+			json="$(cat "$CACHE" 2>/dev/null)"
+		fi
+	fi
+	if [ -z "$json" ] && [ -n "$SECTION" ]; then
+		json="$(/usr/share/qmodem/modem_ctrl.sh cell_info "$SECTION" 2>/dev/null)"
+	fi
+	[ -n "$json" ] || { echo none; return; }
+
+	val="$(printf '%s' "$json" | jq -r 'try (.modem_info[] | select(.key=="network_mode") | .value) catch empty' 2>/dev/null | head -1)"
+	[ -n "$val" ] || { echo none; return; }
+
+	case "$(printf '%s' "$val" | tr 'a-z' 'A-Z')" in
+		*NR*|*5G*) echo nr ;;
+		*)         echo lte ;;
+	esac
+}
+
+echo none > /sys/class/leds/blue:modem/trigger 2>/dev/null
+
+tick=0
+state=down
+refresh_section
+
+while :; do
+	if [ $((tick % POLL)) -eq 0 ]; then
+		[ -n "$SECTION" ] || refresh_section
+		if link_up; then
+			state="$(read_mode)"
+		else
+			state=down
+		fi
+		printf '%s\n' "$state" > "$STATE_FILE" 2>/dev/null
+	fi
+
+	case "$state" in
+		nr)  echo 1 > "$LED" 2>/dev/null ;;
+		lte) if [ $((tick % 2)) -eq 0 ]; then
+				echo 1 > "$LED" 2>/dev/null
+			else
+				echo 0 > "$LED" 2>/dev/null
+			fi ;;
+		*)   echo 0 > "$LED" 2>/dev/null ;;
+	esac
+
+	sleep 1
+	tick=$((tick + 1))
+done

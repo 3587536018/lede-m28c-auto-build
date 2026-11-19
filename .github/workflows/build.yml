@@ -52,6 +52,10 @@ jobs:
           sh -n package/luci-app-m28c-fan/files/etc/init.d/m28c-fan
           sh -n package/luci-app-m28c-fan/files/etc/uci-defaults/90-m28c-fan
           sh -n package/luci-app-m28c-fan/files/usr/sbin/m28c-fan-control
+          sh -n files/usr/sbin/m28c-modem-led
+          sh -n files/etc/init.d/m28c-modem-led
+          sh -n files/etc/uci-defaults/95-m28c-fan-curve
+          sh -n files/etc/uci-defaults/96-m28c-modem-led
           node --check package/luci-app-m28c-fan/files/www/luci-static/resources/view/m28c-fan/settings.js
       - name: Free runner disk space
         env:

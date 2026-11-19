@@ -24,10 +24,13 @@ FILES = {
     "etc/hotplug.d/block/10-mount": "package/system/fstools/files/mount.hotplug",
     "etc/uci-defaults/10-fstab": "package/system/fstools/files/fstab.default",
     "etc/hotplug.d/block/20-smb": "feeds/packages/net/samba4/files/smb.auto",
+    "usr/sbin/m28c-modem-led": "files/usr/sbin/m28c-modem-led",
+    "etc/init.d/m28c-modem-led": "files/etc/init.d/m28c-modem-led",
 }
 EXECUTABLES = {
     "etc/init.d/dockerd", "etc/init.d/m28c-automount", "usr/libexec/m28c-automount",
     "etc/uci-defaults/99-expand-data",
+    "usr/sbin/m28c-modem-led", "etc/init.d/m28c-modem-led",
 }
 OBSOLETE = (
     "etc/15-automount", "etc/hotplug.d/block/15-automount",
